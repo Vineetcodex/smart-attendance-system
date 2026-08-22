@@ -10,6 +10,9 @@ jobs:
     name: Compile Lightweight Release APK
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: write
+
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
@@ -55,3 +58,22 @@ jobs:
           name: DRP-Technology-Attendance-App
           path: web_admin/android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
+      - name: 🚀 Publish Direct Download Release Link
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: v1.0.0
+          name: "DRP Technology Employee Attendance App v1.0.0"
+          body: |
+            ## 📱 DRP Technology Employee Attendance Mobile App
+            
+            ### 📥 Download Link:
+            Click `app-debug.apk` below to install directly on any Android phone.
+            
+            ### ⚡ Features:
+            - Touchless Wall QR Scanner
+            - 3D Multi-Pose Face ID & Liveness Detection
+            - Real-Time Anti-Malpractice Duplicate Blocker
+            - GPS Geofencing Validation
+          files: web_admin/android/app/build/outputs/apk/debug/app-debug.apk
