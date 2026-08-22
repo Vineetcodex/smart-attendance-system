@@ -95,6 +95,15 @@ export const Login: React.FC<Props> = ({ onLoginSuccess }) => {
           Demo Credentials: <span className="text-slate-300 font-mono">admin@drptech.com</span> /{' '}
           <span className="text-slate-300 font-mono">admin123</span>
         </div>
+
+        <div className="mt-4 text-center">
+          <a
+            href="/"
+            className="text-xs text-emerald-400 hover:text-emerald-300 font-medium inline-flex items-center gap-1.5"
+          >
+            📱 Switch to Employee Attendance App →
+          </a>
+        </div>
       </div>
     </div>
   );

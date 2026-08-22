@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Capacitor } from '@capacitor/core';
 import { Sidebar } from './components/Sidebar.js';
 import { Navbar } from './components/Navbar.js';
 import { Dashboard } from './pages/Dashboard.js';
@@ -32,7 +31,7 @@ const AdminLayout: React.FC<{
             <Route path="/employees" element={<Employees />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/simulator" element={<Simulator org={org} />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<Navigate to="/admin" replace />} />
           </Routes>
         </main>
       </div>
@@ -45,9 +44,6 @@ export const App: React.FC = () => {
     return !!localStorage.getItem('admin_token');
   });
   const [org, setOrg] = useState<Organization | null>(null);
-
-  // When running inside Android APK, default directly to Employee Mobile App
-  const isNativeApp = Capacitor.isNativePlatform();
 
   const fetchOrg = async () => {
     try {
@@ -72,29 +68,24 @@ export const App: React.FC = () => {
   return (
     <BrowserRouter>
       <Routes>
-        {/* If installed as Android APK, always show the Employee Attendance App directly */}
-        {isNativeApp ? (
-          <>
-            <Route path="*" element={<MobileApp />} />
-          </>
-        ) : (
-          <>
-            {/* Dedicated Public Mobile Employee App Route for browser users */}
-            <Route path="/mobile" element={<MobileApp />} />
+        {/* 1. Root and /mobile ALWAYS open the Employee Attendance Mobile Portal */}
+        <Route path="/" element={<MobileApp />} />
+        <Route path="/mobile" element={<MobileApp />} />
 
-            {/* Admin Portal Routes for Web management */}
-            <Route
-              path="/*"
-              element={
-                isAuthenticated ? (
-                  <AdminLayout org={org} onLogout={handleLogout} setOrg={setOrg} />
-                ) : (
-                  <Login onLoginSuccess={() => setIsAuthenticated(true)} />
-                )
-              }
-            />
-          </>
-        )}
+        {/* 2. /admin is dedicated for Admin Management */}
+        <Route
+          path="/admin/*"
+          element={
+            isAuthenticated ? (
+              <AdminLayout org={org} onLogout={handleLogout} setOrg={setOrg} />
+            ) : (
+              <Login onLoginSuccess={() => setIsAuthenticated(true)} />
+            )
+          }
+        />
+
+        {/* Fallback to Employee App */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

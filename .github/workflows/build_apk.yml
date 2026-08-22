@@ -63,17 +63,18 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
         with:
-          tag_name: v1.0.0
-          name: "DRP Technology Employee Attendance App v1.0.0"
+          tag_name: v1.0.${{ github.run_number }}
+          name: "DRP Technology Employee App v1.0.${{ github.run_number }}"
           body: |
             ## 📱 DRP Technology Employee Attendance Mobile App
             
-            ### 📥 Download Link:
-            Click `app-debug.apk` below to install directly on any Android phone.
+            ### 📥 Direct Download Link:
+            Click `app-debug.apk` below to download and install on any Android device.
             
             ### ⚡ Features:
-            - Touchless Wall QR Scanner
-            - 3D Multi-Pose Face ID & Liveness Detection
+            - Direct Employee Onboarding & Facial Enrollment
+            - 3D Multi-Pose Face ID (Straight, Left, Right)
             - Real-Time Anti-Malpractice Duplicate Blocker
-            - GPS Geofencing Validation
+            - Touchless Wall QR Scanner
+            - Personal Punch Logs & History
           files: web_admin/android/app/build/outputs/apk/debug/app-debug.apk
