@@ -7,9 +7,19 @@ import { authenticateJwt, requireAdmin } from '../middleware/authMiddleware.js';
 
 const router = Router();
 
-// Health Check
+// Health Check & Version Info
 router.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString(), service: 'Attendance Verification API' });
+});
+
+router.get('/app/version', (req, res) => {
+  res.json({
+    latestVersion: '1.0.0',
+    versionCode: 1,
+    minSupportedVersion: '1.0.0',
+    releaseNotes: 'Triple-factor attendance verification with 3D multi-pose Face ID & anti-malpractice detection.',
+    downloadUrl: 'https://github.com/Vineetcodex/smart-attendance-system/releases/latest',
+  });
 });
 
 // Authentication Routes

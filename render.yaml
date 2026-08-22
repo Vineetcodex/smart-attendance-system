@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: drp-attendance-api
+    env: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: MASTER_QR_SECRET_KEY
+        value: 32_char_master_qr_aes_secret_key!
+      - key: GEOFENCE_RADIUS
+        value: 50
+      - key: FACE_THRESHOLD
+        value: 0.85
