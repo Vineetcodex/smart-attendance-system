@@ -101,9 +101,9 @@ export const MobileApp: React.FC = () => {
   // Auth Mode: 'LOGIN' | 'SIGNUP'
   const [authMode, setAuthMode] = useState<'LOGIN' | 'SIGNUP'>('SIGNUP');
 
-  // Employee & Org Data
-  const [currentEmp, setCurrentEmp] = useState<Employee | null>(null);
-  const currentEmpRef = useRef<Employee | null>(null);
+  // Employee & Org Data (Initialized from local storage for instant dashboard render)
+  const [currentEmp, setCurrentEmp] = useState<Employee | null>(() => api.getStoredEmployee());
+  const currentEmpRef = useRef<Employee | null>(api.getStoredEmployee());
   const directoryEmployeesRef = useRef<Employee[]>([]);
   const [org, setOrg] = useState<Organization | null>(null);
 
@@ -214,22 +214,30 @@ export const MobileApp: React.FC = () => {
 
   // Load Initial Org & Stored Session with fresh database embeddings
   const fetchInitialData = async () => {
+    // 1. Immediately hydrate cached user to guarantee instant UI render
+    const savedEmp = api.getStoredEmployee();
+    if (savedEmp) {
+      setCurrentEmp(savedEmp);
+      currentEmpRef.current = savedEmp;
+      fetchMyAttendanceLogs(savedEmp.id);
+    }
+
+    // 2. Fetch background updates gracefully
     try {
       const [orgData, empData] = await Promise.all([api.getOrganization(), api.getEmployees()]);
-      setOrg(orgData);
-      directoryEmployeesRef.current = empData || [];
+      if (orgData) setOrg(orgData);
+      if (empData) directoryEmployeesRef.current = empData;
 
-      const savedEmp = api.getStoredEmployee();
-      if (savedEmp) {
+      if (savedEmp && Array.isArray(empData)) {
         const matched = empData.find((e) => e.id === savedEmp.id || e.employeeCode === savedEmp.employeeCode);
-        const fullEmp = matched || savedEmp;
-        setCurrentEmp(fullEmp);
-        currentEmpRef.current = fullEmp;
-        localStorage.setItem('employee_user', JSON.stringify(fullEmp));
-        fetchMyAttendanceLogs(fullEmp.id);
+        if (matched) {
+          setCurrentEmp(matched);
+          currentEmpRef.current = matched;
+          localStorage.setItem('employee_user', JSON.stringify(matched));
+        }
       }
     } catch (err) {
-      console.error('Failed to load initial data:', err);
+      console.warn('Background sync note:', err);
     }
   };
 
