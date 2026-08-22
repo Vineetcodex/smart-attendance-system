@@ -994,6 +994,14 @@ export const MobileApp: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          <a
+            href="/admin"
+            title="HR & Admin Management Portal"
+            className="px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-emerald-400 border border-slate-700 transition flex items-center gap-1.5 text-[11px] font-semibold"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Admin</span>
+          </a>
           <button
             type="button"
             onClick={() => setServerSettingsOpen(true)}
@@ -1445,6 +1453,17 @@ export const MobileApp: React.FC = () => {
                 </button>
               </form>
             )}
+
+            {/* Direct Admin Portal Access Link */}
+            <div className="pt-3 border-t border-slate-800/60 text-center">
+              <a
+                href="/admin"
+                className="text-[11px] text-slate-400 hover:text-emerald-400 font-medium inline-flex items-center gap-1.5 transition"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                Access HR & Admin Management Portal ➔
+              </a>
+            </div>
           </div>
         ) : (
           // =========================================================================
