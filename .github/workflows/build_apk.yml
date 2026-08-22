@@ -32,6 +32,8 @@ jobs:
         working-directory: web_admin
         run: |
           npm install
+          # Patch Capacitor 8 SystemBars symbol for 100% Android SDK compatibility
+          sed -i 's/Build.VERSION_CODES.VANILLA_ICE_CREAM/35/g' node_modules/@capacitor/android/capacitor/src/main/java/com/getcapacitor/plugin/SystemBars.java || true
           npm run build
           npx cap sync android
           # Safety patch for Capacitor plugin build files
