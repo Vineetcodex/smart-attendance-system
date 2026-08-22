@@ -20,23 +20,33 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: 📱 Setup Android SDK Tools & Licenses
+        uses: android-actions/setup-android@v3
+
       - name: 🟢 Set up Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: 📦 Build Web App & Sync Android
+      - name: 📦 Build Web App & Sync Android Platform
         working-directory: web_admin
         run: |
           npm install
           npm run build
           npx cap sync android
+          # Ensure SDK 34 is pinned
+          sed -i 's/compileSdkVersion = .*/compileSdkVersion = 34/' android/variables.gradle || true
+          sed -i 's/targetSdkVersion = .*/targetSdkVersion = 34/' android/variables.gradle || true
+          sed -i 's/minSdkVersion = .*/minSdkVersion = 22/' android/variables.gradle || true
+          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" || true
 
       - name: 🔨 Compile Android APK
         working-directory: web_admin/android
         run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
           chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: 📤 Upload APK Artifact
         uses: actions/upload-artifact@v4
