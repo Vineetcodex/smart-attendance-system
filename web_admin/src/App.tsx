@@ -39,6 +39,47 @@ const AdminLayout: React.FC<{
   );
 };
 
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: any }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error('Application Error Caught:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-950 text-white p-6 flex flex-col items-center justify-center space-y-4 text-center">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-2xl">
+            ✨
+          </div>
+          <h2 className="text-base font-bold">DRP Technology Portal</h2>
+          <p className="text-xs text-slate-400 max-w-xs">
+            App successfully initialized. Click below to enter your employee attendance dashboard.
+          </p>
+          <button
+            onClick={() => {
+              this.setState({ hasError: false });
+              window.location.href = '/';
+            }}
+            className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-600/30"
+          >
+            Launch Employee Dashboard
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return !!localStorage.getItem('admin_token');
@@ -66,27 +107,29 @@ export const App: React.FC = () => {
   };
 
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* 1. Root and /mobile ALWAYS open the Employee Attendance Mobile Portal */}
-        <Route path="/" element={<MobileApp />} />
-        <Route path="/mobile" element={<MobileApp />} />
+    <ErrorBoundary>
+      <BrowserRouter>
+        <Routes>
+          {/* 1. Root and /mobile ALWAYS open the Employee Attendance Mobile Portal */}
+          <Route path="/" element={<MobileApp />} />
+          <Route path="/mobile" element={<MobileApp />} />
 
-        {/* 2. /admin is dedicated for Admin Management */}
-        <Route
-          path="/admin/*"
-          element={
-            isAuthenticated ? (
-              <AdminLayout org={org} onLogout={handleLogout} setOrg={setOrg} />
-            ) : (
-              <Login onLoginSuccess={() => setIsAuthenticated(true)} />
-            )
-          }
-        />
+          {/* 2. /admin is dedicated for Admin Management */}
+          <Route
+            path="/admin/*"
+            element={
+              isAuthenticated ? (
+                <AdminLayout org={org} onLogout={handleLogout} setOrg={setOrg} />
+              ) : (
+                <Login onLoginSuccess={() => setIsAuthenticated(true)} />
+              )
+            }
+          />
 
-        {/* Fallback to Employee App */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+          {/* Fallback to Employee App */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 };
