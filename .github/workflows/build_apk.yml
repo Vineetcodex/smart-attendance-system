@@ -27,13 +27,15 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: 📦 Install Flutter Dependencies
+      - name: 🛠️ Initialize Android Platform Files
         working-directory: mobile_app
-        run: flutter pub get
+        run: |
+          flutter create --platforms=android --org=com.aeroverify.attendance .
+          flutter pub get
 
       - name: 🔨 Build Android Release APK
         working-directory: mobile_app
-        run: flutter build apk --release
+        run: flutter build apk --release --no-tree-shake-icons
 
       - name: 📤 Upload APK Artifact
         uses: actions/upload-artifact@v4
