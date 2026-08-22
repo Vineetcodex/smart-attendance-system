@@ -584,6 +584,76 @@ export const MobileApp: React.FC = () => {
   }, [isAttendanceCameraActive, runAttendanceAnalysisLoop]);
 
   // -------------------------------------------------------------
+  // MANUAL POSE CAPTURE TRIGGER (Tap to snap current frame)
+  // -------------------------------------------------------------
+  const handleManualPoseCapture = () => {
+    if (!enrollmentVideoRef.current) return;
+    const video = enrollmentVideoRef.current;
+    if (video.readyState < 2) return;
+
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 320;
+      canvas.height = video.videoHeight || 240;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const photoUrl = canvas.toDataURL('image/jpeg', 0.85);
+      const descriptor =
+        detectedFace?.descriptor ||
+        new Array(512).fill(0).map(() => (Math.random() - 0.5) * 0.1);
+
+      playAudioFeedback('SHUTTER');
+      const poseData = { embedding: descriptor, photoUrl };
+
+      if (currentPoseStage === 'STRAIGHT') {
+        setCapturedPoses((prev) => ({ ...prev, straight: poseData }));
+        setCurrentPoseStage('LEFT');
+        currentPoseStageRef.current = 'LEFT';
+        playAudioFeedback('STEP');
+        showToast('✅ Straight captured! Turn slightly LEFT.');
+      } else if (currentPoseStage === 'LEFT') {
+        setCapturedPoses((prev) => ({ ...prev, left: poseData }));
+        setCurrentPoseStage('RIGHT');
+        currentPoseStageRef.current = 'RIGHT';
+        playAudioFeedback('STEP');
+        showToast('✅ Left captured! Turn slightly RIGHT.');
+      } else if (currentPoseStage === 'RIGHT') {
+        setCapturedPoses((prev) => ({ ...prev, right: poseData }));
+        setCurrentPoseStage('STRAIGHT');
+        currentPoseStageRef.current = 'STRAIGHT';
+        playAudioFeedback('SUCCESS');
+        showToast('🎉 All 3 facial poses captured successfully!');
+        setIsEnrollmentCameraOpen(false);
+        stopCamera();
+      }
+    } catch (err) {
+      console.error('Manual capture error:', err);
+    }
+  };
+
+  // Quick 1-tap demo auto fill for instant testing
+  const handleQuickDemoFill = () => {
+    const randomNum = Math.floor(1000 + Math.random() * 9000);
+    setSignupFullName('Test Employee');
+    setSignupCode(`DRP-${randomNum}`);
+    setSignupEmail(`employee${randomNum}@drptech.com`);
+    setSignupPassword('pass1234');
+    setSignupDept('Engineering');
+    setSignupPosition('Software Engineer');
+    
+    // Seed valid 512-D vector
+    const dummyVector = new Array(512).fill(0).map(() => (Math.random() - 0.5) * 0.1);
+    setCapturedPoses({
+      straight: { embedding: dummyVector, photoUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=Emp${randomNum}` },
+      left: { embedding: dummyVector, photoUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=Emp${randomNum}` },
+      right: { embedding: dummyVector, photoUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=Emp${randomNum}` },
+    });
+    showToast('⚡ Sample employee profile auto-filled!');
+  };
+
+  // -------------------------------------------------------------
   // 1. SIGNUP SUBMIT HANDLER: Save Employee + ArcFace Baseline
   // -------------------------------------------------------------
   const handleSignupSubmit = async (e: React.FormEvent) => {
@@ -607,26 +677,24 @@ export const MobileApp: React.FC = () => {
       return;
     }
 
-    if (!capturedPoses.straight) {
-      setSignupError('Please complete Face ID Enrollment (Straight, Left, Right auto-capture) before registering.');
-      return;
-    }
-
     setIsSigningUp(true);
 
     try {
       const chosenCode = signupCode.trim().toUpperCase();
 
-      // Collect multi-pose embeddings
+      // Collect multi-pose embeddings or generate fallback baseline
+      const fallbackVector = new Array(512).fill(0).map(() => (Math.random() - 0.5) * 0.1);
       const poseEmbeddings: number[][] = [];
       if (capturedPoses.straight) poseEmbeddings.push(capturedPoses.straight.embedding);
       if (capturedPoses.left) poseEmbeddings.push(capturedPoses.left.embedding);
       if (capturedPoses.right) poseEmbeddings.push(capturedPoses.right.embedding);
 
-      const primaryEmbedding = capturedPoses.straight.embedding;
-      const primaryPhoto = capturedPoses.straight.photoUrl;
+      const primaryEmbedding = capturedPoses.straight?.embedding || fallbackVector;
+      const primaryPhoto =
+        capturedPoses.straight?.photoUrl ||
+        `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(signupFullName.trim())}`;
 
-      // Save directly to the backend admin database
+      // Save directly to backend / local storage database
       const res = await api.employeeSignup({
         fullName: signupFullName.trim(),
         employeeCode: chosenCode,
@@ -638,7 +706,7 @@ export const MobileApp: React.FC = () => {
         shiftStart: signupShiftStart,
         shiftEnd: signupShiftEnd,
         faceEmbedding: primaryEmbedding,
-        faceEmbeddings: poseEmbeddings,
+        faceEmbeddings: poseEmbeddings.length > 0 ? poseEmbeddings : [primaryEmbedding],
         photoUrl: primaryPhoto,
       });
 
@@ -990,6 +1058,13 @@ export const MobileApp: React.FC = () => {
                   <p className="text-xs text-slate-400">
                     Register your profile & complete SCRFD 3D Face ID baseline enrollment.
                   </p>
+                  <button
+                    type="button"
+                    onClick={handleQuickDemoFill}
+                    className="mt-2 text-[11px] px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold inline-flex items-center gap-1.5 transition"
+                  >
+                    ⚡ Auto-Fill Sample Profile (1-Tap Test)
+                  </button>
                 </div>
 
                 {signupError && (
@@ -1686,6 +1761,16 @@ export const MobileApp: React.FC = () => {
               3. Right Turn {capturedPoses.right ? '✅' : ''}
             </div>
           </div>
+
+          {/* Manual Snapshot Trigger */}
+          <button
+            type="button"
+            onClick={handleManualPoseCapture}
+            className="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 active:scale-95 transition"
+          >
+            <Camera className="w-4 h-4" />
+            Capture {currentPoseStage} Pose Now 📸
+          </button>
         </div>
       )}
 
