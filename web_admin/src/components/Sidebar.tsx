@@ -13,12 +13,12 @@ import {
 
 export const Sidebar: React.FC = () => {
   const navItems = [
-    { to: '/', label: 'Live Dashboard', icon: LayoutDashboard, exact: true },
-    { to: '/employees', label: 'Employee Directory', icon: Users },
-    { to: '/reports', label: 'Attendance Reports', icon: FileSpreadsheet },
-    { to: '/simulator', label: 'Biometric AI Lab', icon: Cpu },
-    { to: '/org-settings', label: 'Organization Setup', icon: Building2 },
-    { to: '/mobile', label: '📱 Open Mobile App', icon: Smartphone },
+    { to: '/admin', label: 'Live Dashboard', icon: LayoutDashboard, exact: true },
+    { to: '/admin/employees', label: 'Employee Directory', icon: Users },
+    { to: '/admin/reports', label: 'Attendance Reports', icon: FileSpreadsheet },
+    { to: '/admin/org-settings', label: 'Master QR & Geofence', icon: Building2 },
+    { to: '/admin/simulator', label: 'Biometric AI Lab', icon: Cpu },
+    { to: '/mobile', label: '📱 Open Employee App', icon: Smartphone },
   ];
 
   return (
