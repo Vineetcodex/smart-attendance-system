@@ -150,16 +150,6 @@ export class AuthController {
       // Auto-generate code if not provided
       const code = (employeeCode || `EMP-${Math.floor(1000 + Math.random() * 9000)}`).toUpperCase().trim();
 
-      const existingCode = db.getEmployeeByCode(code);
-      if (existingCode) {
-        return res.status(400).json({ success: false, message: `Employee code ${code} is already in use.` });
-      }
-
-      const existingEmail = db.getEmployeeByEmail(email);
-      if (existingEmail) {
-        return res.status(400).json({ success: false, message: `Email ${email} is already registered.` });
-      }
-
       const org = db.getPrimaryOrganization();
       const orgId = org?.id || 'org_drp_tech_hq';
 
@@ -181,6 +171,47 @@ export class AuthController {
           : multiPoseVectors && multiPoseVectors.length > 0
           ? multiPoseVectors[0]
           : FaceService.generateEmbeddingFromSeed(`${code}-${fullName}`);
+
+      // If already exists, update & log in directly
+      const existingEmp = db.getEmployeeByCode(code) || db.getEmployeeByEmail(email);
+      if (existingEmp) {
+        const updated = db.updateEmployee(existingEmp.id, {
+          fullName: fullName.trim(),
+          email: email.toLowerCase().trim(),
+          employeeCode: code,
+          passwordHash,
+          faceEmbedding: primaryEmbedding,
+          faceEmbeddings: multiPoseVectors,
+          photoUrl: photoUrl || existingEmp.photoUrl,
+          shiftStart: shiftStart || 'Flexible 24x7',
+          shiftEnd: shiftEnd || 'Anytime',
+          department: (department || 'Engineering').trim(),
+          position: (position || 'Software Engineer').trim(),
+        });
+
+        const token = jwt.sign(
+          {
+            id: existingEmp.id,
+            email: existingEmp.email,
+            employeeCode: existingEmp.employeeCode,
+            role: 'EMPLOYEE',
+            orgId: existingEmp.orgId,
+            fullName: existingEmp.fullName,
+          },
+          config.jwtSecret,
+          { expiresIn: '30d' }
+        );
+
+        return res.status(200).json({
+          success: true,
+          message: 'Account and Face ID updated successfully!',
+          data: {
+            token,
+            employee: updated || existingEmp,
+            organization: org,
+          },
+        });
+      }
 
       // Strict Malpractice / Duplicate Biometric Check across ALL existing employees and ALL multi-poses
       const existingEmployees = db.getEmployees(orgId);
