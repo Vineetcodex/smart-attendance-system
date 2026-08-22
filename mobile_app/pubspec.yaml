@@ -1,0 +1,43 @@
+name: aeroverify_attendance
+description: "Automated QR and Facial Verification Mobile Attendance Client (Android SDK 34+)"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management
+  flutter_riverpod: ^2.5.1
+
+  # Optical & Computer Vision
+  camera: ^0.11.0+2
+  google_mlkit_face_detection: ^0.12.0
+  google_mlkit_barcode_scanning: ^0.13.0
+  image: ^4.2.0
+
+  # Geolocation & Device Security
+  geolocator: ^13.0.1
+  permission_handler: ^11.3.1
+  connectivity_plus: ^6.0.5
+
+  # Networking & Storage
+  dio: ^5.7.0
+  flutter_secure_storage: ^9.2.2
+  shared_preferences: ^2.3.2
+  uuid: ^4.5.1
+  intl: ^0.19.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/models/
+    - assets/images/

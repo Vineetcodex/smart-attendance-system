@@ -1,0 +1,1910 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  Camera,
+  CheckCircle2,
+  XCircle,
+  Sparkles,
+  RefreshCw,
+  LogOut,
+  ArrowRight,
+  ShieldCheck,
+  SwitchCamera,
+  AlertTriangle,
+  Lock,
+  User,
+  Check,
+  History,
+  LayoutDashboard,
+  Shuffle,
+  ScanLine,
+  UserPlus,
+  LogIn,
+  QrCode,
+  Scan,
+} from 'lucide-react';
+import { api, Employee, Organization, AttendanceLog } from '../services/api.js';
+import { StatusBadge } from '../components/StatusBadge.js';
+import {
+  detectRealFace,
+  loadFaceDetectionModels,
+  FaceDetectionResult,
+  checkPoseMatch,
+  calculateArcFaceCosineSimilarity,
+  PoseStage,
+  FiveLandmarks,
+} from '../services/faceDetectionService.js';
+import { scanQrFromVideo, validateMasterQr } from '../services/qrScannerService.js';
+
+// Sound synthesizer using Web Audio API for interactive biometric feedback
+const playAudioFeedback = (type: 'STEP' | 'SUCCESS' | 'SHUTTER' | 'ALERT') => {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    if (type === 'STEP') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(659.25, ctx.currentTime);
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.18);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.18);
+    } else if (type === 'SUCCESS') {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+      osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.09);
+      osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.18);
+      osc.frequency.setValueAtTime(1046.5, ctx.currentTime + 0.27);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.45);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.45);
+    } else if (type === 'SHUTTER') {
+      const bufferSize = ctx.sampleRate * 0.08;
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const output = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        output[i] = Math.random() * 2 - 1;
+      }
+      const whiteNoise = ctx.createBufferSource();
+      whiteNoise.buffer = buffer;
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'highpass';
+      filter.frequency.value = 1200;
+      whiteNoise.connect(filter);
+      filter.connect(gain);
+      gain.gain.setValueAtTime(0.25, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.08);
+      whiteNoise.start(ctx.currentTime);
+    } else if (type === 'ALERT') {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(350, ctx.currentTime);
+      osc.frequency.setValueAtTime(220, ctx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.2);
+    }
+  } catch (_) {
+    // Ignore audio policy restrictions
+  }
+};
+
+export const MobileApp: React.FC = () => {
+  // Auth Mode: 'LOGIN' | 'SIGNUP'
+  const [authMode, setAuthMode] = useState<'LOGIN' | 'SIGNUP'>('SIGNUP');
+
+  // Employee & Org Data
+  const [currentEmp, setCurrentEmp] = useState<Employee | null>(null);
+  const currentEmpRef = useRef<Employee | null>(null);
+  const directoryEmployeesRef = useRef<Employee[]>([]);
+  const [org, setOrg] = useState<Organization | null>(null);
+
+  // Active Tab when logged in: 'DASHBOARD' | 'HISTORY' | 'PROFILE'
+  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'HISTORY' | 'PROFILE'>('DASHBOARD');
+  const [myLogs, setMyLogs] = useState<AttendanceLog[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+
+  // Synchronize currentEmpRef with currentEmp state
+  useEffect(() => {
+    currentEmpRef.current = currentEmp;
+  }, [currentEmp]);
+
+  // -------------------------------------------------------------
+  // 1. SIGNUP FORM (New Employee Registration)
+  // -------------------------------------------------------------
+  const [signupFullName, setSignupFullName] = useState('');
+  const [signupCode, setSignupCode] = useState('');
+  const [signupEmail, setSignupEmail] = useState('');
+  const [signupPhone, setSignupPhone] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
+  const [signupDept, setSignupDept] = useState('Engineering');
+  const [signupPosition, setSignupPosition] = useState('Software Engineer');
+  const [signupShiftStart, setSignupShiftStart] = useState('09:00');
+  const [signupShiftEnd, setSignupShiftEnd] = useState('18:00');
+  const [signupError, setSignupError] = useState<string | null>(null);
+  const [isSigningUp, setIsSigningUp] = useState(false);
+
+  // Registration Multi-Pose Face Capture State (Straight, Left, Right)
+  const [isEnrollmentCameraOpen, setIsEnrollmentCameraOpen] = useState(false);
+  const [currentPoseStage, setCurrentPoseStage] = useState<PoseStage>('STRAIGHT');
+  const currentPoseStageRef = useRef<PoseStage>('STRAIGHT');
+  const [capturedPoses, setCapturedPoses] = useState<{
+    straight?: { embedding: number[]; photoUrl: string };
+    left?: { embedding: number[]; photoUrl: string };
+    right?: { embedding: number[]; photoUrl: string };
+  }>({});
+  const [poseHoldProgress, setPoseHoldProgress] = useState(0); // 0 to 100%
+  const poseHoldStartTime = useRef<number | null>(null);
+
+  // -------------------------------------------------------------
+  // 2. SIGNIN FORM (Existing Employee Login)
+  // -------------------------------------------------------------
+  const [loginIdentifier, setLoginIdentifier] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // -------------------------------------------------------------
+  // 3. DAILY ATTENDANCE CAMERA (Dual-Step: Master QR Scan ➔ Biometric Face ID)
+  // -------------------------------------------------------------
+  const [isAttendanceCameraActive, setIsAttendanceCameraActive] = useState(false);
+  const [attendanceStep, setAttendanceStep] = useState<'QR_SCAN' | 'FACE_SCAN'>('QR_SCAN');
+  const attendanceStepRef = useRef<'QR_SCAN' | 'FACE_SCAN'>('QR_SCAN');
+  const [scannedQrPayload, setScannedQrPayload] = useState<string | null>(null);
+  const scannedQrPayloadRef = useRef<string | null>(null);
+  const [isQrVerified, setIsQrVerified] = useState(false);
+  const [qrScanFeedback, setQrScanFeedback] = useState<string>('Point camera at the Office Master QR poster on the wall');
+
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const enrollmentVideoRef = useRef<HTMLVideoElement>(null);
+  const isLoopRunning = useRef(false);
+
+  // Live Biometric Face Detection State
+  const [detectedFace, setDetectedFace] = useState<FaceDetectionResult | null>(null);
+  const [liveSimilarityScore, setLiveSimilarityScore] = useState<number>(0);
+  const [isFaceMatch, setIsFaceMatch] = useState(false);
+  const [autoCaptureProgress, setAutoCaptureProgress] = useState(0); // 0 to 100%
+  const attendanceHoldStartTime = useRef<number | null>(null);
+
+  // Verification Processing State
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<any | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const departments = [
+    'Engineering',
+    'Product',
+    'Design',
+    'Marketing',
+    'Sales',
+    'Human Resources',
+    'Finance',
+    'Operations',
+  ];
+
+  const handleGenerateCodeSuggestion = () => {
+    const randomNum = Math.floor(1000 + Math.random() * 9000);
+    setSignupCode(`EMP-${randomNum}`);
+  };
+
+  // Load Models on Mount
+  useEffect(() => {
+    loadFaceDetectionModels().catch((err) => {
+      console.warn('Face models loading background:', err);
+    });
+  }, []);
+
+  // Load Initial Org & Stored Session with fresh database embeddings
+  const fetchInitialData = async () => {
+    try {
+      const [orgData, empData] = await Promise.all([api.getOrganization(), api.getEmployees()]);
+      setOrg(orgData);
+      directoryEmployeesRef.current = empData || [];
+
+      const savedEmp = api.getStoredEmployee();
+      if (savedEmp) {
+        const matched = empData.find((e) => e.id === savedEmp.id || e.employeeCode === savedEmp.employeeCode);
+        const fullEmp = matched || savedEmp;
+        setCurrentEmp(fullEmp);
+        currentEmpRef.current = fullEmp;
+        localStorage.setItem('employee_user', JSON.stringify(fullEmp));
+        fetchMyAttendanceLogs(fullEmp.id);
+      }
+    } catch (err) {
+      console.error('Failed to load initial data:', err);
+    }
+  };
+
+  const fetchMyAttendanceLogs = async (employeeId: string) => {
+    try {
+      setLoadingLogs(true);
+      const logs = await api.getAttendanceLogs({ employeeId });
+      setMyLogs(logs);
+    } catch (err) {
+      console.error('Failed to fetch personal attendance logs:', err);
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchInitialData();
+  }, []);
+
+  useEffect(() => {
+    if (currentEmp) {
+      fetchMyAttendanceLogs(currentEmp.id);
+    }
+  }, [currentEmp]);
+
+  // Camera Management
+  useEffect(() => {
+    if (isAttendanceCameraActive || isEnrollmentCameraOpen) {
+      startCamera();
+    } else {
+      stopCamera();
+    }
+    return () => stopCamera();
+  }, [isAttendanceCameraActive, isEnrollmentCameraOpen, facingMode]);
+
+  const startCamera = async () => {
+    stopCamera();
+    setCameraError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: facingMode,
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+      setCameraStream(stream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      if (enrollmentVideoRef.current) {
+        enrollmentVideoRef.current.srcObject = stream;
+      }
+    } catch (err: any) {
+      console.error('Camera access error:', err);
+      setCameraError('Camera access unavailable. Please check camera permissions in your browser.');
+    }
+  };
+
+  const stopCamera = () => {
+    isLoopRunning.current = false;
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((t) => t.stop());
+      setCameraStream(null);
+    }
+  };
+
+  const handleToggleCamera = () => {
+    setFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'));
+  };
+
+  // -------------------------------------------------------------
+  // REGISTRATION: MULTI-POSE GUIDED CAPTURE LOOP
+  // -------------------------------------------------------------
+  const runEnrollmentAnalysisLoop = useCallback(async () => {
+    if (!isLoopRunning.current || !enrollmentVideoRef.current) return;
+    const video = enrollmentVideoRef.current;
+
+    if (video.readyState >= 2 && video.videoWidth > 0) {
+      try {
+        const faceResult = await detectRealFace(video, facingMode);
+        setDetectedFace(faceResult);
+
+        const activeStage = currentPoseStageRef.current;
+
+        if (faceResult.hasFace && faceResult.descriptor) {
+          // -------------------------------------------------------------
+          // ANTI-MALPRACTICE CHECK: Reject if face already registered
+          // -------------------------------------------------------------
+          if (directoryEmployeesRef.current && directoryEmployeesRef.current.length > 0) {
+            let matchedDuplicate: Employee | null = null;
+            let maxDuplicateSim = 0;
+
+            for (const emp of directoryEmployeesRef.current) {
+              const candidateVectors: number[][] = [];
+              if (Array.isArray(emp.faceEmbeddings) && emp.faceEmbeddings.length > 0) {
+                candidateVectors.push(...emp.faceEmbeddings);
+              }
+              if (Array.isArray(emp.faceEmbedding) && emp.faceEmbedding.length > 0) {
+                candidateVectors.push(emp.faceEmbedding);
+              }
+
+              for (const baseVec of candidateVectors) {
+                if (Array.isArray(baseVec) && baseVec.length > 0) {
+                  const res = calculateArcFaceCosineSimilarity(faceResult.descriptor, baseVec);
+                  if (res.isMatch && res.similarityScore > maxDuplicateSim) {
+                    maxDuplicateSim = res.similarityScore;
+                    matchedDuplicate = emp;
+                  }
+                }
+              }
+            }
+
+            if (matchedDuplicate) {
+              // MALPRACTICE DETECTED!
+              isLoopRunning.current = false;
+              stopCamera();
+              setIsEnrollmentCameraOpen(false);
+              playAudioFeedback('ALERT');
+              const alertMsg = `⚠️ MALPRACTICE DETECTED: This face is already enrolled under Employee ID "${matchedDuplicate.employeeCode}" (${matchedDuplicate.fullName}) with ${(maxDuplicateSim * 100).toFixed(1)}% match. Duplicate registration with a new ID is blocked!`;
+              setSignupError(alertMsg);
+              setCapturedPoses({});
+              showToast('🚨 Malpractice Blocked: Face already registered!');
+              return;
+            }
+          }
+
+          const poseCheck = checkPoseMatch(
+            activeStage,
+            faceResult.quality.yawAngle,
+            faceResult.quality.pitchAngle
+          );
+
+          // Fast snap when score is >= 90% or pose matches criteria
+          if ((poseCheck.isMatch || poseCheck.progress >= 90) && faceResult.descriptor) {
+            if (!poseHoldStartTime.current) {
+              poseHoldStartTime.current = Date.now();
+            }
+            const elapsed = Date.now() - poseHoldStartTime.current;
+            const targetDuration = 180; // Fast 180ms confirmation
+            const pct = Math.min(100, Math.round((elapsed / targetDuration) * 100));
+            setPoseHoldProgress(pct);
+
+            if (pct >= 100) {
+              // Check for duplicate face against backend database before saving
+              try {
+                const dupCheck = await api.checkFaceDuplicate(faceResult.descriptor);
+                if (dupCheck.isDuplicate && dupCheck.matchedEmployee) {
+                  // MALPRACTICE DETECTED FROM DATABASE!
+                  isLoopRunning.current = false;
+                  stopCamera();
+                  setIsEnrollmentCameraOpen(false);
+                  playAudioFeedback('ALERT');
+                  const alertMsg = `🚨 MALPRACTICE BLOCKED: This face is already registered in the database under Employee ID "${dupCheck.matchedEmployee.employeeCode}" (${dupCheck.matchedEmployee.fullName}) with ${(dupCheck.similarityScore * 100).toFixed(1)}% match. Re-registration with a second ID or email is prohibited!`;
+                  setSignupError(alertMsg);
+                  setCapturedPoses({});
+                  showToast('🚨 Malpractice Blocked: Face already enrolled!');
+                  return;
+                }
+              } catch (_) {
+                // If offline or check fails, backend will enforce on submit
+              }
+
+              // Capture this pose!
+              playAudioFeedback('SHUTTER');
+              const poseData = {
+                embedding: faceResult.descriptor,
+                photoUrl: faceResult.alignedFaceDataUrl || '',
+              };
+
+              if (activeStage === 'STRAIGHT') {
+                setCapturedPoses((prev) => ({ ...prev, straight: poseData }));
+                currentPoseStageRef.current = 'LEFT';
+                setCurrentPoseStage('LEFT');
+                playAudioFeedback('STEP');
+                showToast('✅ Straight captured! Now turn slightly LEFT.');
+              } else if (activeStage === 'LEFT') {
+                setCapturedPoses((prev) => ({ ...prev, left: poseData }));
+                currentPoseStageRef.current = 'RIGHT';
+                setCurrentPoseStage('RIGHT');
+                playAudioFeedback('STEP');
+                showToast('✅ Left captured! Now turn slightly RIGHT.');
+              } else if (activeStage === 'RIGHT') {
+                setCapturedPoses((prev) => ({ ...prev, right: poseData }));
+                currentPoseStageRef.current = 'STRAIGHT';
+                setCurrentPoseStage('STRAIGHT');
+                playAudioFeedback('SUCCESS');
+                showToast('🎉 All 3 facial poses captured successfully!');
+                setIsEnrollmentCameraOpen(false);
+                stopCamera();
+              }
+
+              poseHoldStartTime.current = null;
+              setPoseHoldProgress(0);
+            }
+          } else {
+            poseHoldStartTime.current = null;
+            setPoseHoldProgress(0);
+          }
+        } else {
+          poseHoldStartTime.current = null;
+          setPoseHoldProgress(0);
+        }
+      } catch (err) {
+        console.error('Enrollment frame error:', err);
+      }
+    }
+
+    if (isLoopRunning.current) {
+      setTimeout(runEnrollmentAnalysisLoop, 50); // ~20 FPS for responsive HUD
+    }
+  }, [facingMode]);
+
+  useEffect(() => {
+    if (isEnrollmentCameraOpen) {
+      isLoopRunning.current = true;
+      poseHoldStartTime.current = null;
+      setPoseHoldProgress(0);
+      currentPoseStageRef.current = currentPoseStage || 'STRAIGHT';
+      runEnrollmentAnalysisLoop();
+    } else {
+      isLoopRunning.current = false;
+    }
+    return () => {
+      isLoopRunning.current = false;
+    };
+  }, [isEnrollmentCameraOpen, runEnrollmentAnalysisLoop]);
+
+  // -------------------------------------------------------------
+  // ATTENDANCE: DUAL-STEP RECOGNITION (STEP 1: QR ➔ STEP 2: FACE ID)
+  // -------------------------------------------------------------
+  const runAttendanceAnalysisLoop = useCallback(async () => {
+    if (!isLoopRunning.current || !videoRef.current) return;
+    const video = videoRef.current;
+
+    if (video.readyState >= 2 && video.videoWidth > 0) {
+      try {
+        const step = attendanceStepRef.current;
+
+        // -------------------------------------------------------------
+        // STEP 1: SCAN & VERIFY OFFICE MASTER QR POSTER
+        // -------------------------------------------------------------
+        if (step === 'QR_SCAN') {
+          const qrResult = scanQrFromVideo(video);
+          if (qrResult && qrResult.data) {
+            const validation = validateMasterQr(qrResult.data, org);
+            if (validation.isValid) {
+              playAudioFeedback('STEP');
+              scannedQrPayloadRef.current = qrResult.data;
+              setScannedQrPayload(qrResult.data);
+              setIsQrVerified(true);
+              setQrScanFeedback('✅ Office Master QR Verified! Aligning face...');
+              showToast('✅ Office Master QR Verified! Now align your face.');
+
+              // Instantly transition to Face Verification in the same camera view
+              attendanceStepRef.current = 'FACE_SCAN';
+              setAttendanceStep('FACE_SCAN');
+
+              // If using rear camera for wall QR, auto-switch to front camera for face
+              if (facingMode === 'environment') {
+                setFacingMode('user');
+              }
+            } else {
+              setQrScanFeedback('❌ Invalid QR: Please scan the official Office Master QR poster');
+            }
+          }
+        }
+        // -------------------------------------------------------------
+        // STEP 2: BIOMETRIC FACE VERIFICATION & AUTO-CAPTURE
+        // -------------------------------------------------------------
+        else if (step === 'FACE_SCAN') {
+          const faceResult = await detectRealFace(video, facingMode);
+          setDetectedFace(faceResult);
+
+          const emp = currentEmpRef.current || currentEmp;
+
+          if (faceResult.hasFace && faceResult.descriptor && emp) {
+            // Compare probe vector against all enrolled baseline poses (Straight, Left, Right)
+            const baselinePoses: number[][] = [];
+
+            if (Array.isArray(emp.faceEmbeddings) && emp.faceEmbeddings.length > 0) {
+              baselinePoses.push(...emp.faceEmbeddings);
+            }
+            if (Array.isArray(emp.faceEmbedding) && emp.faceEmbedding.length > 0) {
+              baselinePoses.push(emp.faceEmbedding);
+            }
+
+            let bestMatch = { isMatch: false, similarityScore: 0, distance: 999 };
+
+            for (const baseVec of baselinePoses) {
+              if (Array.isArray(baseVec) && baseVec.length > 0) {
+                const res = calculateArcFaceCosineSimilarity(faceResult.descriptor, baseVec);
+                if (res.similarityScore > bestMatch.similarityScore) {
+                  bestMatch = res;
+                }
+              }
+            }
+
+            setLiveSimilarityScore(bestMatch.similarityScore);
+            const isMatch = bestMatch.isMatch && faceResult.antiSpoofing.isLive;
+            setIsFaceMatch(isMatch);
+
+            // Fast Auto-Capture: 250ms sustained lock
+            if (isMatch && !isProcessing) {
+              if (!attendanceHoldStartTime.current) {
+                attendanceHoldStartTime.current = Date.now();
+              }
+              const elapsed = Date.now() - attendanceHoldStartTime.current;
+              const targetDuration = 250; // Fast 250ms capture
+              const pct = Math.min(100, Math.round((elapsed / targetDuration) * 100));
+              setAutoCaptureProgress(pct);
+
+              if (pct >= 100) {
+                attendanceHoldStartTime.current = null;
+                setAutoCaptureProgress(0);
+                handleTriggerAttendanceVerification(faceResult, scannedQrPayloadRef.current);
+              }
+            } else {
+              attendanceHoldStartTime.current = null;
+              setAutoCaptureProgress(0);
+            }
+          } else {
+            setLiveSimilarityScore(0);
+            setIsFaceMatch(false);
+            attendanceHoldStartTime.current = null;
+            setAutoCaptureProgress(0);
+          }
+        }
+      } catch (err) {
+        console.error('Attendance frame error:', err);
+      }
+    }
+
+    if (isLoopRunning.current) {
+      setTimeout(runAttendanceAnalysisLoop, 50); // ~20 FPS for responsive scanning
+    }
+  }, [currentEmp, facingMode, isProcessing, org]);
+
+  useEffect(() => {
+    if (isAttendanceCameraActive) {
+      isLoopRunning.current = true;
+      attendanceHoldStartTime.current = null;
+      setAutoCaptureProgress(0);
+      runAttendanceAnalysisLoop();
+    } else {
+      isLoopRunning.current = false;
+    }
+    return () => {
+      isLoopRunning.current = false;
+    };
+  }, [isAttendanceCameraActive, runAttendanceAnalysisLoop]);
+
+  // -------------------------------------------------------------
+  // 1. SIGNUP SUBMIT HANDLER: Save Employee + ArcFace Baseline
+  // -------------------------------------------------------------
+  const handleSignupSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSignupError(null);
+
+    if (!signupFullName.trim()) {
+      setSignupError('Please enter your full name.');
+      return;
+    }
+    if (!signupCode.trim()) {
+      setSignupError('Please choose your Employee ID (e.g. EMP-1001).');
+      return;
+    }
+    if (!signupEmail.trim()) {
+      setSignupError('Please enter your work email.');
+      return;
+    }
+    if (!signupPassword || signupPassword.length < 4) {
+      setSignupError('Password must be at least 4 characters long.');
+      return;
+    }
+
+    if (!capturedPoses.straight) {
+      setSignupError('Please complete Face ID Enrollment (Straight, Left, Right auto-capture) before registering.');
+      return;
+    }
+
+    setIsSigningUp(true);
+
+    try {
+      const chosenCode = signupCode.trim().toUpperCase();
+
+      // Collect multi-pose embeddings
+      const poseEmbeddings: number[][] = [];
+      if (capturedPoses.straight) poseEmbeddings.push(capturedPoses.straight.embedding);
+      if (capturedPoses.left) poseEmbeddings.push(capturedPoses.left.embedding);
+      if (capturedPoses.right) poseEmbeddings.push(capturedPoses.right.embedding);
+
+      const primaryEmbedding = capturedPoses.straight.embedding;
+      const primaryPhoto = capturedPoses.straight.photoUrl;
+
+      // Save directly to the backend admin database
+      const res = await api.employeeSignup({
+        fullName: signupFullName.trim(),
+        employeeCode: chosenCode,
+        email: signupEmail.trim().toLowerCase(),
+        password: signupPassword,
+        phone: signupPhone.trim(),
+        department: signupDept,
+        position: signupPosition.trim(),
+        shiftStart: signupShiftStart,
+        shiftEnd: signupShiftEnd,
+        faceEmbedding: primaryEmbedding,
+        faceEmbeddings: poseEmbeddings,
+        photoUrl: primaryPhoto,
+      });
+
+      if (res.success && res.data?.employee) {
+        playAudioFeedback('SUCCESS');
+        const createdEmp = res.data.employee;
+
+        // Auto log in and switch to dashboard
+        setCurrentEmp(createdEmp);
+        fetchInitialData();
+        fetchMyAttendanceLogs(createdEmp.id);
+        showToast(`🎉 Registration Successful! Welcome, ${createdEmp.fullName}!`);
+      } else {
+        setSignupError(res.message || 'Registration failed.');
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || 'Error creating employee account.';
+      setSignupError(msg);
+      if (err.response?.status === 409 || err.response?.data?.isMalpractice) {
+        playAudioFeedback('ALERT');
+        setCapturedPoses({});
+        showToast('🚨 Malpractice Blocked: Face already enrolled!');
+      }
+    } finally {
+      setIsSigningUp(false);
+    }
+  };
+
+  // -------------------------------------------------------------
+  // 2. SIGNIN HANDLER: Employee Login
+  // -------------------------------------------------------------
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoggingIn(true);
+    setLoginError(null);
+
+    try {
+      const res = await api.employeeLogin(loginIdentifier.trim(), loginPassword.trim());
+      if (res.success && res.data?.employee) {
+        playAudioFeedback('SUCCESS');
+        setCurrentEmp(res.data.employee);
+        if (res.data.organization) setOrg(res.data.organization);
+        fetchMyAttendanceLogs(res.data.employee.id);
+        showToast(`👋 Welcome back, ${res.data.employee.fullName}!`);
+      } else {
+        setLoginError(res.message || 'Invalid credentials.');
+      }
+    } catch (err: any) {
+      setLoginError(err.response?.data?.message || 'Login failed. Check your ID/email and password.');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleLogout = () => {
+    api.employeeLogout();
+    setCurrentEmp(null);
+    setIsAttendanceCameraActive(false);
+    setVerifyResult(null);
+    showToast('Logged out successfully.');
+  };
+
+  // -------------------------------------------------------------
+  // 3. ATTENDANCE VERIFICATION SUBMISSION (QR + FACE BIOMETRICS)
+  // -------------------------------------------------------------
+  const handleTriggerAttendanceVerification = async (
+    faceData: FaceDetectionResult,
+    qrPayloadOverride?: string | null
+  ) => {
+    if (!currentEmp || isProcessing) return;
+
+    setIsProcessing(true);
+    playAudioFeedback('SHUTTER');
+
+    try {
+      // Get current GPS position (optional / fallback to org coords)
+      let lat = org?.latitude || 37.7749;
+      let lng = org?.longitude || -122.4194;
+
+      if (navigator.geolocation) {
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 3000, enableHighAccuracy: true });
+          });
+          lat = pos.coords.latitude;
+          lng = pos.coords.longitude;
+        } catch (_) {
+          // Fallback to org location if geolocation is denied
+        }
+      }
+
+      const qrPayloadToSend = qrPayloadOverride || scannedQrPayloadRef.current || scannedQrPayload || undefined;
+
+      const res = await api.verifyAttendance({
+        employeeId: currentEmp.id,
+        qrPayload: qrPayloadToSend,
+        faceEmbedding: faceData.descriptor || [],
+        livenessScore: faceData.antiSpoofing.livenessScore,
+        antiSpoofPassed: faceData.antiSpoofing.isLive,
+        antiSpoofVerdict: faceData.antiSpoofing.verdict,
+        latitude: lat,
+        longitude: lng,
+        snapshotUrl: faceData.alignedFaceDataUrl || currentEmp.photoUrl,
+        capturedAt: new Date().toISOString(),
+      });
+
+      setVerifyResult(res);
+
+      if (res.success) {
+        playAudioFeedback('SUCCESS');
+        showToast(res.status === 'LATE' ? '⚠️ Attendance Recorded (Late)' : '🎉 Attendance Marked Successfully (QR + Face ID)!');
+        fetchMyAttendanceLogs(currentEmp.id);
+      } else {
+        playAudioFeedback('ALERT');
+        showToast('❌ Attendance Verification Rejected');
+      }
+    } catch (err: any) {
+      playAudioFeedback('ALERT');
+      const errData = err.response?.data;
+      setVerifyResult(errData || { success: false, message: err.message });
+      showToast('❌ Attendance Verification Failed');
+    } finally {
+      setIsProcessing(false);
+      setIsAttendanceCameraActive(false);
+      stopCamera();
+    }
+  };
+
+  // Render 5 Key Facial Landmarks Cybernetic Overlay
+  const renderLandmarksHUD = (landmarks5?: FiveLandmarks) => {
+    if (!landmarks5) return null;
+    return (
+      <svg className="absolute inset-0 w-full h-full pointer-events-none z-20">
+        {/* Glow Filter */}
+        <defs>
+          <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* Dynamic Connective Polygon */}
+        <polygon
+          points={`${landmarks5.leftEye.x},${landmarks5.leftEye.y} ${landmarks5.rightEye.x},${landmarks5.rightEye.y} ${landmarks5.rightMouth.x},${landmarks5.rightMouth.y} ${landmarks5.leftMouth.x},${landmarks5.leftMouth.y}`}
+          fill="rgba(16, 185, 129, 0.12)"
+          stroke="rgba(16, 185, 129, 0.5)"
+          strokeWidth="1.5"
+          strokeDasharray="4 2"
+        />
+
+        {/* Eye connection */}
+        <line
+          x1={landmarks5.leftEye.x}
+          y1={landmarks5.leftEye.y}
+          x2={landmarks5.rightEye.x}
+          y2={landmarks5.rightEye.y}
+          stroke="#10b981"
+          strokeWidth="2"
+        />
+
+        {/* Nose to eyes triangle */}
+        <line
+          x1={landmarks5.leftEye.x}
+          y1={landmarks5.leftEye.y}
+          x2={landmarks5.noseTip.x}
+          y2={landmarks5.noseTip.y}
+          stroke="rgba(52, 211, 153, 0.7)"
+          strokeWidth="1.5"
+        />
+        <line
+          x1={landmarks5.rightEye.x}
+          y1={landmarks5.rightEye.y}
+          x2={landmarks5.noseTip.x}
+          y2={landmarks5.noseTip.y}
+          stroke="rgba(52, 211, 153, 0.7)"
+          strokeWidth="1.5"
+        />
+
+        {/* 5 Landmark Nodes */}
+        {[
+          { pt: landmarks5.leftEye, label: 'L.Eye' },
+          { pt: landmarks5.rightEye, label: 'R.Eye' },
+          { pt: landmarks5.noseTip, label: 'Nose' },
+          { pt: landmarks5.leftMouth, label: 'L.Lip' },
+          { pt: landmarks5.rightMouth, label: 'R.Lip' },
+        ].map((node, i) => (
+          <g key={i}>
+            <circle cx={node.pt.x} cy={node.pt.y} r="5" fill="#10b981" filter="url(#glow)" />
+            <circle cx={node.pt.x} cy={node.pt.y} r="2.5" fill="#ffffff" />
+          </g>
+        ))}
+      </svg>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between max-w-md mx-auto relative shadow-2xl overflow-hidden font-sans border-x border-slate-900">
+      {/* Toast Notification Banner */}
+      {toastMessage && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-slate-900/95 border border-emerald-500/50 text-white text-xs font-semibold shadow-2xl backdrop-blur-md flex items-center gap-2 animate-bounce">
+          <Sparkles className="w-4 h-4 text-emerald-400" />
+          {toastMessage}
+        </div>
+      )}
+
+      {/* TOP APP HEADER */}
+      <header className="px-5 py-4 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 flex items-center justify-between sticky top-0 z-30">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 p-0.5 shadow-lg shadow-emerald-500/20">
+            <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
+              <ScanLine className="w-5 h-5 text-emerald-400" />
+            </div>
+          </div>
+          <div>
+            <h1 className="font-bold text-sm tracking-tight text-white flex items-center gap-1.5">
+              FaceTrack AI
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
+                SCRFD + ArcFace
+              </span>
+            </h1>
+            <p className="text-[11px] text-slate-400">{org?.name || 'DRP Technology Hub'}</p>
+          </div>
+        </div>
+
+        {currentEmp && (
+          <button
+            onClick={handleLogout}
+            title="Logout"
+            className="p-2 rounded-xl bg-slate-800/80 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        )}
+      </header>
+
+      {/* MAIN BODY CONTENT */}
+      <main className="flex-1 overflow-y-auto p-5 space-y-6">
+        {!currentEmp ? (
+          // =========================================================================
+          // AUTHENTICATION SCREEN: REGISTRATION OR SIGN-IN
+          // =========================================================================
+          <div className="space-y-6 animate-fadeIn">
+            {/* Mode Switcher */}
+            <div className="grid grid-cols-2 p-1 bg-slate-900 rounded-xl border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setAuthMode('SIGNUP')}
+                className={`py-2 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 ${
+                  authMode === 'SIGNUP'
+                    ? 'bg-emerald-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                New Registration
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthMode('LOGIN')}
+                className={`py-2 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 ${
+                  authMode === 'LOGIN'
+                    ? 'bg-emerald-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                Employee Sign In
+              </button>
+            </div>
+
+            {authMode === 'SIGNUP' ? (
+              // -------------------------------------------------------------
+              // 1. REGISTRATION FORM WITH 3-POSE SCRFD FACE ENROLLMENT
+              // -------------------------------------------------------------
+              <form onSubmit={handleSignupSubmit} className="space-y-4">
+                <div className="text-center space-y-1">
+                  <h2 className="text-lg font-bold text-white">Employee Onboarding</h2>
+                  <p className="text-xs text-slate-400">
+                    Register your profile & complete SCRFD 3D Face ID baseline enrollment.
+                  </p>
+                </div>
+
+                {signupError && (
+                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                    <span>{signupError}</span>
+                  </div>
+                )}
+
+                {/* Full Name */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-300">Full Name</label>
+                  <div className="relative">
+                    <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Alex Morgan"
+                      value={signupFullName}
+                      onChange={(e) => setSignupFullName(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Employee ID with Suggestions */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-slate-300">Employee ID</label>
+                    <button
+                      type="button"
+                      onClick={handleGenerateCodeSuggestion}
+                      className="text-[11px] text-emerald-400 hover:underline flex items-center gap-1"
+                    >
+                      <Shuffle className="w-3 h-3" /> Auto-generate
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. EMP-1082"
+                    value={signupCode}
+                    onChange={(e) => setSignupCode(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs font-mono uppercase focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                {/* Email & Password */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-slate-300">Work Email</label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="alex@company.com"
+                      value={signupEmail}
+                      onChange={(e) => setSignupEmail(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-slate-300">Password</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="••••••••"
+                      value={signupPassword}
+                      onChange={(e) => setSignupPassword(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Department & Position */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-slate-300">Department</label>
+                    <select
+                      value={signupDept}
+                      onChange={(e) => setSignupDept(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500"
+                    >
+                      {departments.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-slate-300">Position</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Lead Engineer"
+                      value={signupPosition}
+                      onChange={(e) => setSignupPosition(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Phone & Shift Hours */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-slate-300">Phone (Optional)</label>
+                    <input
+                      type="tel"
+                      placeholder="+1 (555) 000-0000"
+                      value={signupPhone}
+                      onChange={(e) => setSignupPhone(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-slate-300">Shift Start / End</label>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="time"
+                        value={signupShiftStart}
+                        onChange={(e) => setSignupShiftStart(e.target.value)}
+                        className="w-full px-1.5 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white text-[11px] focus:outline-none focus:border-emerald-500"
+                      />
+                      <span className="text-slate-500 text-xs">-</span>
+                      <input
+                        type="time"
+                        value={signupShiftEnd}
+                        onChange={(e) => setSignupShiftEnd(e.target.value)}
+                        className="w-full px-1.5 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white text-[11px] focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* -------------------------------------------------------------
+                    BIOMETRIC FACE ID ENROLLMENT SECTION (STRAIGHT, LEFT, RIGHT)
+                   ------------------------------------------------------------- */}
+                <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400">
+                        <ScanLine className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-bold text-white">SCRFD Face ID Enrollment</h3>
+                        <p className="text-[10px] text-slate-400">Auto-captures 3 poses (Straight, Left, Right)</p>
+                      </div>
+                    </div>
+
+                    {capturedPoses.straight && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold flex items-center gap-1">
+                        <Check className="w-3 h-3" /> Ready
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Pose Indicators */}
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div
+                      className={`p-2.5 rounded-xl border transition flex flex-col items-center gap-1 ${
+                        capturedPoses.straight
+                          ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
+                          : 'bg-slate-950 border-slate-800 text-slate-500'
+                      }`}
+                    >
+                      {capturedPoses.straight?.photoUrl ? (
+                        <img
+                          src={capturedPoses.straight.photoUrl}
+                          alt="Straight"
+                          className="w-8 h-8 rounded-full object-cover border border-emerald-400"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-xs">
+                          1
+                        </div>
+                      )}
+                      <span className="text-[10px] font-medium">Straight</span>
+                    </div>
+
+                    <div
+                      className={`p-2.5 rounded-xl border transition flex flex-col items-center gap-1 ${
+                        capturedPoses.left
+                          ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
+                          : 'bg-slate-950 border-slate-800 text-slate-500'
+                      }`}
+                    >
+                      {capturedPoses.left?.photoUrl ? (
+                        <img
+                          src={capturedPoses.left.photoUrl}
+                          alt="Left"
+                          className="w-8 h-8 rounded-full object-cover border border-emerald-400"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-xs">
+                          2
+                        </div>
+                      )}
+                      <span className="text-[10px] font-medium">Turn Left</span>
+                    </div>
+
+                    <div
+                      className={`p-2.5 rounded-xl border transition flex flex-col items-center gap-1 ${
+                        capturedPoses.right
+                          ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
+                          : 'bg-slate-950 border-slate-800 text-slate-500'
+                      }`}
+                    >
+                      {capturedPoses.right?.photoUrl ? (
+                        <img
+                          src={capturedPoses.right.photoUrl}
+                          alt="Right"
+                          className="w-8 h-8 rounded-full object-cover border border-emerald-400"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-xs">
+                          3
+                        </div>
+                      )}
+                      <span className="text-[10px] font-medium">Turn Right</span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentPoseStage('STRAIGHT');
+                      setIsEnrollmentCameraOpen(true);
+                    }}
+                    className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-semibold transition flex items-center justify-center gap-2 border border-emerald-500/30"
+                  >
+                    <Camera className="w-4 h-4 text-emerald-400" />
+                    {capturedPoses.straight ? 'Re-calibrate Face ID' : 'Start Guided Face Capture'}
+                  </button>
+                </div>
+
+                {/* Submit Button */}
+                <button
+                  type="submit"
+                  disabled={isSigningUp || !capturedPoses.straight}
+                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold text-xs shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2"
+                >
+                  {isSigningUp ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Registering Account...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      Complete Registration & Sign In
+                    </>
+                  )}
+                </button>
+              </form>
+            ) : (
+              // -------------------------------------------------------------
+              // 2. SIGN IN FORM
+              // -------------------------------------------------------------
+              <form onSubmit={handleLoginSubmit} className="space-y-4">
+                <div className="text-center space-y-1">
+                  <h2 className="text-lg font-bold text-white">Employee Sign In</h2>
+                  <p className="text-xs text-slate-400">Enter your Employee ID or email to access your portal</p>
+                </div>
+
+                {loginError && (
+                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                    <span>{loginError}</span>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-300">Employee ID or Email</label>
+                  <div className="relative">
+                    <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. EMP-1001 or alex@company.com"
+                      value={loginIdentifier}
+                      onChange={(e) => setLoginIdentifier(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-300">Password</label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                      type="password"
+                      required
+                      placeholder="••••••••"
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoggingIn}
+                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold text-xs shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2"
+                >
+                  {isLoggingIn ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Signing In...
+                    </>
+                  ) : (
+                    <>
+                      <LogIn className="w-4 h-4" />
+                      Sign In to FaceTrack
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
+          </div>
+        ) : (
+          // =========================================================================
+          // LOGGED IN PORTAL (DASHBOARD | HISTORY | PROFILE)
+          // =========================================================================
+          <div className="space-y-6">
+            {activeTab === 'DASHBOARD' && (
+              <div className="space-y-5 animate-fadeIn">
+                {/* Employee Welcome Card */}
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={currentEmp.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentEmp.fullName}`}
+                      alt={currentEmp.fullName}
+                      className="w-12 h-12 rounded-xl object-cover border-2 border-emerald-500/50 shadow-md"
+                    />
+                    <div>
+                      <h2 className="font-bold text-white text-sm">{currentEmp.fullName}</h2>
+                      <p className="text-[11px] text-emerald-400 font-mono">{currentEmp.employeeCode}</p>
+                      <p className="text-[10px] text-slate-400">{currentEmp.department} • {currentEmp.position}</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">
+                    Shift {currentEmp.shiftStart || '09:00'} - {currentEmp.shiftEnd || '18:00'}
+                  </span>
+                </div>
+
+                {/* Primary Touchless Attendance Action Card (Dual Factor: QR + Face ID) */}
+                <div className="p-5 rounded-2xl bg-gradient-to-b from-emerald-950/40 via-slate-900 to-slate-950 border border-emerald-500/30 text-center space-y-4 shadow-xl">
+                  <div className="w-16 h-16 mx-auto rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-300 shadow-inner">
+                    <QrCode className="w-8 h-8 animate-pulse text-emerald-400" />
+                  </div>
+
+                  <div className="space-y-1">
+                    <h3 className="font-bold text-white text-base">Office Dual-Factor Attendance</h3>
+                    <p className="text-xs text-slate-400 max-w-xs mx-auto">
+                      Step 1: Scan Office Master QR Poster ➔ Step 2: Instant Biometric Face ID Verification.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setVerifyResult(null);
+                      setAttendanceStep('QR_SCAN');
+                      attendanceStepRef.current = 'QR_SCAN';
+                      setIsQrVerified(false);
+                      setScannedQrPayload(null);
+                      scannedQrPayloadRef.current = null;
+                      setQrScanFeedback('Point camera at the Office Master QR poster on the wall');
+                      setFacingMode('environment'); // default to rear camera for wall poster
+                      setIsAttendanceCameraActive(true);
+                    }}
+                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-sm shadow-lg shadow-emerald-500/30 transition flex items-center justify-center gap-2 active:scale-95"
+                  >
+                    <Scan className="w-5 h-5" />
+                    Mark Attendance (QR ➔ Face ID)
+                  </button>
+                </div>
+
+                {/* Recent Attendance Status */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-300">Today's Activity</span>
+                    <button
+                      onClick={() => setActiveTab('HISTORY')}
+                      className="text-emerald-400 hover:underline flex items-center gap-1 text-[11px]"
+                    >
+                      View All Logs <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
+
+                  {myLogs.length > 0 ? (
+                    <div className="space-y-2">
+                      {myLogs.slice(0, 3).map((log) => (
+                        <div
+                          key={log.id}
+                          className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between hover:border-slate-700 transition"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="relative">
+                              <img
+                                src={log.snapshotUrl || currentEmp.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentEmp.fullName}`}
+                                alt="Face Snapshot"
+                                className="w-10 h-10 rounded-lg object-cover border border-emerald-500/40"
+                              />
+                              <div className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-slate-950">
+                                <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-xs font-semibold text-white">
+                                {new Date(log.timestamp).toLocaleDateString(undefined, {
+                                  weekday: 'short',
+                                  month: 'short',
+                                  day: 'numeric',
+                                })}
+                              </p>
+                              <p className="text-[11px] text-slate-400 font-mono">
+                                {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right space-y-1">
+                            <StatusBadge status={log.status} />
+                            <p className="text-[10px] text-emerald-400 font-mono">
+                              {(log.faceSimilarityScore * 100).toFixed(1)}% Match
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-6 text-center text-slate-500 text-xs bg-slate-900/40 rounded-xl border border-slate-900">
+                      No attendance marked yet today. Tap "Open Biometric Camera" above to record check-in!
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'HISTORY' && (
+              <div className="space-y-4 animate-fadeIn">
+                <h2 className="font-bold text-white text-sm flex items-center gap-2">
+                  <History className="w-4 h-4 text-emerald-400" />
+                  My Biometric Attendance History
+                </h2>
+
+                {loadingLogs ? (
+                  <div className="p-8 text-center text-xs text-slate-400">
+                    <RefreshCw className="w-5 h-5 animate-spin mx-auto text-emerald-400 mb-2" />
+                    Loading logs...
+                  </div>
+                ) : myLogs.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-slate-500 bg-slate-900/40 rounded-xl">
+                    No attendance records found yet.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {myLogs.map((log) => (
+                      <div
+                        key={log.id}
+                        className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800/80 flex items-center justify-between text-xs hover:border-slate-700 transition"
+                      >
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={log.snapshotUrl || currentEmp.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentEmp.fullName}`}
+                            alt="Snapshot"
+                            className="w-11 h-11 rounded-xl object-cover border border-slate-700 shrink-0"
+                          />
+                          <div className="space-y-0.5">
+                            <p className="font-semibold text-white">
+                              {new Date(log.timestamp).toLocaleDateString(undefined, {
+                                weekday: 'short',
+                                month: 'short',
+                                day: 'numeric',
+                              })}
+                            </p>
+                            <p className="text-[11px] text-slate-400 font-mono">
+                              {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                            </p>
+                            <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                              <span className="text-emerald-400 font-semibold">
+                                Match: {(log.faceSimilarityScore * 100).toFixed(1)}%
+                              </span>
+                              {log.livenessScore && (
+                                <span>• Live: {(log.livenessScore * 100).toFixed(0)}%</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <StatusBadge status={log.status} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'PROFILE' && (
+              <div className="space-y-4 animate-fadeIn">
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 text-center space-y-3">
+                  <img
+                    src={currentEmp.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentEmp.fullName}`}
+                    alt={currentEmp.fullName}
+                    className="w-20 h-20 mx-auto rounded-full object-cover border-4 border-emerald-500/50 shadow-xl"
+                  />
+                  <div>
+                    <h3 className="font-bold text-white text-base">{currentEmp.fullName}</h3>
+                    <p className="text-xs text-emerald-400 font-mono">{currentEmp.employeeCode}</p>
+                    <p className="text-xs text-slate-400">{currentEmp.email}</p>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 text-xs">
+                  <div className="flex justify-between py-1.5 border-b border-slate-800">
+                    <span className="text-slate-400">Department</span>
+                    <span className="text-white font-medium">{currentEmp.department}</span>
+                  </div>
+                  <div className="flex justify-between py-1.5 border-b border-slate-800">
+                    <span className="text-slate-400">Position</span>
+                    <span className="text-white font-medium">{currentEmp.position}</span>
+                  </div>
+                  <div className="flex justify-between py-1.5 border-b border-slate-800">
+                    <span className="text-slate-400">Scheduled Shift</span>
+                    <span className="text-emerald-400 font-medium">
+                      {currentEmp.shiftStart || '09:00'} - {currentEmp.shiftEnd || '18:00'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1.5 border-b border-slate-800">
+                    <span className="text-slate-400">Biometric Model</span>
+                    <span className="text-white font-mono text-[10px]">SCRFD + ArcFace 512-D</span>
+                  </div>
+                  <div className="flex justify-between py-1.5">
+                    <span className="text-slate-400">Face ID Status</span>
+                    <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5" /> Enrolled (Active)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* BOTTOM TAB NAVIGATION (When Logged In) */}
+      {currentEmp && (
+        <nav className="p-2 bg-slate-900/90 backdrop-blur-md border-t border-slate-800 grid grid-cols-3 gap-1 sticky bottom-0 z-30">
+          <button
+            onClick={() => setActiveTab('DASHBOARD')}
+            className={`py-2 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 transition ${
+              activeTab === 'DASHBOARD' ? 'text-emerald-400 bg-slate-800' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            Attendance
+          </button>
+          <button
+            onClick={() => setActiveTab('HISTORY')}
+            className={`py-2 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 transition ${
+              activeTab === 'HISTORY' ? 'text-emerald-400 bg-slate-800' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <History className="w-4 h-4" />
+            History
+          </button>
+          <button
+            onClick={() => setActiveTab('PROFILE')}
+            className={`py-2 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 transition ${
+              activeTab === 'PROFILE' ? 'text-emerald-400 bg-slate-800' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <User className="w-4 h-4" />
+            Profile
+          </button>
+        </nav>
+      )}
+
+      {/* =========================================================================
+          MODAL 1: REGISTRATION MULTI-POSE ENROLLMENT CAMERA (STRAIGHT, LEFT, RIGHT)
+         ========================================================================= */}
+      {isEnrollmentCameraOpen && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col justify-between max-w-md mx-auto p-4 animate-fadeIn">
+          {/* Header */}
+          <div className="flex items-center justify-between text-white">
+            <div>
+              <h3 className="font-bold text-sm">Face ID Enrollment (Stage: {currentPoseStage})</h3>
+              <p className="text-[11px] text-slate-400">SCRFD 5-Landmark Multi-Pose Calibration</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleToggleCamera}
+                className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white"
+              >
+                <SwitchCamera className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => {
+                  setIsEnrollmentCameraOpen(false);
+                  stopCamera();
+                }}
+                className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Viewfinder Frame with Landmarks & Guidance */}
+          <div className="relative my-auto w-full aspect-square rounded-3xl overflow-hidden border-2 border-emerald-500/50 shadow-2xl bg-black flex items-center justify-center">
+            {cameraError ? (
+              <div className="p-6 text-center text-rose-400 text-xs">{cameraError}</div>
+            ) : (
+              <>
+                <video
+                  ref={enrollmentVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className={`w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`}
+                />
+
+                {/* Render 5 SCRFD Key Landmarks */}
+                {detectedFace?.hasFace && renderLandmarksHUD(detectedFace.landmarks5)}
+
+                {/* Oval Guide Silhouette */}
+                <div className="absolute inset-8 rounded-full border-2 border-dashed border-emerald-400/40 pointer-events-none flex items-center justify-center">
+                  {/* Hold Progress Ring */}
+                  {poseHoldProgress > 0 && (
+                    <div
+                      className="absolute inset-0 rounded-full border-4 border-emerald-400 transition-all duration-75"
+                      style={{ opacity: poseHoldProgress / 100 }}
+                    />
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* Live Guidance Prompt */}
+            <div className="absolute bottom-4 inset-x-4 p-2.5 rounded-xl bg-slate-950/85 backdrop-blur-md border border-slate-800 text-center space-y-1">
+              <p className="text-xs font-bold text-emerald-300">
+                {detectedFace?.hasFace
+                  ? checkPoseMatch(
+                      currentPoseStage,
+                      detectedFace.quality.yawAngle,
+                      detectedFace.quality.pitchAngle
+                    ).prompt
+                  : 'Align your face inside the circle'}
+              </p>
+              {detectedFace?.hasFace && (
+                <div className="flex items-center justify-center gap-3 text-[10px] text-slate-400 font-mono">
+                  <span>Yaw: {detectedFace.quality.yawAngle}°</span>
+                  <span>Pitch: {detectedFace.quality.pitchAngle}°</span>
+                  <span>Sharpness: {detectedFace.quality.sharpnessScore}%</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Bottom Pose Progress Status */}
+          <div className="grid grid-cols-3 gap-2">
+            <div
+              className={`p-2 rounded-xl border text-center text-[11px] font-semibold ${
+                currentPoseStage === 'STRAIGHT'
+                  ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 animate-pulse'
+                  : capturedPoses.straight
+                  ? 'bg-slate-900 border-emerald-500 text-emerald-400'
+                  : 'bg-slate-900 border-slate-800 text-slate-500'
+              }`}
+            >
+              1. Straight {capturedPoses.straight ? '✅' : ''}
+            </div>
+            <div
+              className={`p-2 rounded-xl border text-center text-[11px] font-semibold ${
+                currentPoseStage === 'LEFT'
+                  ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 animate-pulse'
+                  : capturedPoses.left
+                  ? 'bg-slate-900 border-emerald-500 text-emerald-400'
+                  : 'bg-slate-900 border-slate-800 text-slate-500'
+              }`}
+            >
+              2. Left Turn {capturedPoses.left ? '✅' : ''}
+            </div>
+            <div
+              className={`p-2 rounded-xl border text-center text-[11px] font-semibold ${
+                currentPoseStage === 'RIGHT'
+                  ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 animate-pulse'
+                  : capturedPoses.right
+                  ? 'bg-slate-900 border-emerald-500 text-emerald-400'
+                  : 'bg-slate-900 border-slate-800 text-slate-500'
+              }`}
+            >
+              3. Right Turn {capturedPoses.right ? '✅' : ''}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          MODAL 2: DAILY ATTENDANCE CAMERA (STEP 1: QR SCAN ➔ STEP 2: FACE ID)
+         ========================================================================= */}
+      {isAttendanceCameraActive && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col justify-between max-w-md mx-auto p-4 animate-fadeIn">
+          {/* Header & Stepper */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-white">
+              <div>
+                <h3 className="font-bold text-sm">Office Dual-Factor Attendance</h3>
+                <p className="text-[11px] text-slate-400">
+                  {attendanceStep === 'QR_SCAN'
+                    ? 'Step 1 of 2: Scan Office Master QR Poster'
+                    : 'Step 2 of 2: Facial Biometric Identification'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleToggleCamera}
+                  className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white"
+                  title="Switch Camera (Front/Rear)"
+                >
+                  <SwitchCamera className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => {
+                    setIsAttendanceCameraActive(false);
+                    stopCamera();
+                  }}
+                  className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Interactive 2-Step Progress Indicator */}
+            <div className="grid grid-cols-2 gap-2">
+              <div
+                className={`py-1.5 px-3 rounded-xl border text-center text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
+                  isQrVerified
+                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+                    : attendanceStep === 'QR_SCAN'
+                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 animate-pulse'
+                    : 'bg-slate-900 border-slate-800 text-slate-500'
+                }`}
+              >
+                <QrCode className="w-3.5 h-3.5" />
+                <span>1. Master QR {isQrVerified ? '✅' : ''}</span>
+              </div>
+              <div
+                className={`py-1.5 px-3 rounded-xl border text-center text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
+                  attendanceStep === 'FACE_SCAN'
+                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 animate-pulse'
+                    : 'bg-slate-900 border-slate-800 text-slate-500'
+                }`}
+              >
+                <User className="w-3.5 h-3.5" />
+                <span>2. Face ID Biometrics</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Viewfinder Viewport */}
+          <div className="relative my-auto w-full aspect-square rounded-3xl overflow-hidden border-2 border-emerald-500/50 shadow-2xl bg-black flex items-center justify-center">
+            {cameraError ? (
+              <div className="p-6 text-center text-rose-400 text-xs">{cameraError}</div>
+            ) : (
+              <>
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className={`w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`}
+                />
+
+                {/* -------------------------------------------------------------
+                    VIEWFINDER OVERLAY: STEP 1 (QR SCANNER)
+                   ------------------------------------------------------------- */}
+                {attendanceStep === 'QR_SCAN' && (
+                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                    {/* Square QR Targeting Reticle with Corner Brackets */}
+                    <div className="relative w-3/4 aspect-square rounded-2xl border-2 border-dashed border-emerald-400/60 shadow-[0_0_30px_rgba(16,185,129,0.3)] flex items-center justify-center overflow-hidden">
+                      {/* Animated Laser Scanning Beam */}
+                      <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_15px_#34d399] animate-[bounce_2s_infinite]" />
+
+                      {/* Corner Accents */}
+                      <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-emerald-400 rounded-tl-lg" />
+                      <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-emerald-400 rounded-tr-lg" />
+                      <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-emerald-400 rounded-bl-lg" />
+                      <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-emerald-400 rounded-br-lg" />
+
+                      <div className="text-center p-4 bg-black/40 backdrop-blur-sm rounded-xl">
+                        <QrCode className="w-10 h-10 mx-auto text-emerald-400/80 animate-pulse mb-1" />
+                        <span className="text-[11px] font-semibold text-emerald-200">Align Master QR Here</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* -------------------------------------------------------------
+                    VIEWFINDER OVERLAY: STEP 2 (FACE ID BIOMETRIC)
+                   ------------------------------------------------------------- */}
+                {attendanceStep === 'FACE_SCAN' && (
+                  <>
+                    {/* 5 Facial Landmarks Cybernetic Overlay */}
+                    {detectedFace?.hasFace && renderLandmarksHUD(detectedFace.landmarks5)}
+
+                    {/* Facial Recognition Oval Target */}
+                    <div
+                      className={`absolute inset-8 rounded-full border-2 transition-colors pointer-events-none flex items-center justify-center ${
+                        isFaceMatch
+                          ? 'border-emerald-400 shadow-[0_0_25px_rgba(16,185,129,0.4)]'
+                          : 'border-dashed border-slate-500/60'
+                      }`}
+                    >
+                      {/* Auto Capture Progress Fill Ring */}
+                      {autoCaptureProgress > 0 && (
+                        <div
+                          className="absolute inset-0 rounded-full border-4 border-emerald-400 transition-all duration-75 animate-pulse"
+                          style={{ opacity: autoCaptureProgress / 100 }}
+                        />
+                      )}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
+            {/* Bottom Real-Time HUD Status Bar */}
+            <div className="absolute bottom-4 inset-x-4 p-3 rounded-2xl bg-slate-950/85 backdrop-blur-md border border-slate-800 space-y-2">
+              {attendanceStep === 'QR_SCAN' ? (
+                <div className="flex items-center gap-2 text-xs font-semibold text-white">
+                  <Scan className="w-4 h-4 text-emerald-400 animate-pulse" />
+                  <span className="truncate">{qrScanFeedback}</span>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-white">
+                      <ShieldCheck
+                        className={`w-4 h-4 ${
+                          detectedFace?.antiSpoofing.isLive ? 'text-emerald-400' : 'text-amber-400'
+                        }`}
+                      />
+                      <span>
+                        {detectedFace?.hasFace
+                          ? detectedFace.antiSpoofing.isLive
+                            ? 'Liveness: Genuine Live'
+                            : detectedFace.antiSpoofing.message
+                          : 'Looking for Face...'}
+                      </span>
+                    </div>
+                    {detectedFace?.hasFace && (
+                      <span
+                        className={`text-xs font-mono font-bold px-2 py-0.5 rounded-lg ${
+                          isFaceMatch
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : 'bg-slate-800 text-slate-300'
+                        }`}
+                      >
+                        Match: {(liveSimilarityScore * 100).toFixed(1)}%
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Similarity Meter Progress Bar */}
+                  <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden border border-slate-800">
+                    <div
+                      className={`h-full transition-all duration-150 ${
+                        isFaceMatch ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-slate-700'
+                      }`}
+                      style={{ width: `${Math.min(100, liveSimilarityScore * 100)}%` }}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Action Bar / Camera Controls */}
+          <div className="space-y-2">
+            {attendanceStep === 'QR_SCAN' ? (
+              <div className="space-y-2">
+                <button
+                  onClick={handleToggleCamera}
+                  className="w-full py-3.5 rounded-2xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs transition flex items-center justify-center gap-2"
+                >
+                  <SwitchCamera className="w-4 h-4 text-emerald-400" />
+                  Flip Camera ({facingMode === 'environment' ? 'Rear Camera Active' : 'Front Camera Active'})
+                </button>
+                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-center">
+                  <p className="text-[11px] text-amber-300 font-medium flex items-center justify-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-amber-400" />
+                    Office Master QR required: Scan the poster on the wall to unlock Face ID.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() =>
+                  detectedFace && handleTriggerAttendanceVerification(detectedFace, scannedQrPayloadRef.current)
+                }
+                disabled={!detectedFace?.hasFace || isProcessing}
+                className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2"
+              >
+                {isProcessing ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Verifying Attendance Multi-Factor...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    {isFaceMatch ? 'Auto-Verifying Face...' : 'Mark Attendance Now'}
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          MODAL 3: VERIFICATION RESULT CARD MODAL
+         ========================================================================= */}
+      {verifyResult && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-sm text-center space-y-4 shadow-2xl">
+            {verifyResult.success ? (
+              <div className="w-16 h-16 mx-auto rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center">
+                <CheckCircle2 className="w-10 h-10" />
+              </div>
+            ) : (
+              <div className="w-16 h-16 mx-auto rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center">
+                <XCircle className="w-10 h-10" />
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <h3 className="text-lg font-bold text-white">
+                {verifyResult.success
+                  ? verifyResult.status === 'LATE'
+                    ? 'Attendance Marked (Late)'
+                    : 'Attendance Verified (Present)'
+                  : 'Verification Rejected'}
+              </h3>
+              <p className="text-xs text-slate-400">{verifyResult.message}</p>
+            </div>
+
+            {/* Metrics Breakdown */}
+            {verifyResult.details && (
+              <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2 text-xs text-left">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">ArcFace Similarity</span>
+                  <span className="text-emerald-400 font-mono font-semibold">
+                    {verifyResult.details.faceSimilarityScore
+                      ? `${(verifyResult.details.faceSimilarityScore * 100).toFixed(1)}%`
+                      : 'N/A'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Anti-Spoofing Check</span>
+                  <span className="text-emerald-400 font-semibold">
+                    {verifyResult.details.livenessPassed ? '✅ Verified Live' : '❌ Failed'}
+                  </span>
+                </div>
+                {verifyResult.details.timestamp && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Timestamp</span>
+                    <span className="text-white font-mono">
+                      {new Date(verifyResult.details.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button
+              onClick={() => setVerifyResult(null)}
+              className="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs transition"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
