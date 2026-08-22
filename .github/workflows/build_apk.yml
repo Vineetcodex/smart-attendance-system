@@ -24,10 +24,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
-          cache-dependency-path: web_admin/package-lock.json
 
-      - name: 📦 Install Dependencies & Build Web App
+      - name: 📦 Build Web App & Sync Android
         working-directory: web_admin
         run: |
           npm install
@@ -38,7 +36,7 @@ jobs:
         working-directory: web_admin/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --stacktrace
 
       - name: 📤 Upload APK Artifact
         uses: actions/upload-artifact@v4
