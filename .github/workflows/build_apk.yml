@@ -27,9 +27,15 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: 📦 Install Flutter Dependencies
+      - name: 🛠️ Setup Pristine Android Toolchain
         working-directory: mobile_app
-        run: flutter pub get
+        run: |
+          rm -rf android
+          flutter create --platforms=android --org=com.aeroverify.attendance --project-name=aeroverify_attendance .
+          # Inject Camera, Location, and ClearText Internet permissions into AndroidManifest.xml
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-feature android:name="android.hardware.camera" android:required="true" />' android/app/src/main/AndroidManifest.xml
+          sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
+          flutter pub get
 
       - name: 🔨 Build Android Release APK
         working-directory: mobile_app

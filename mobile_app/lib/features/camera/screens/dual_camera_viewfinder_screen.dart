@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
-import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
-import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../auth/models/employee_model.dart';
 import '../services/face_embedding_service.dart';
@@ -23,35 +21,16 @@ class _DualCameraViewfinderScreenState extends State<DualCameraViewfinderScreen>
   List<CameraDescription> _cameras = [];
   bool _isCameraInitialized = false;
 
-  // ML Kit Processors
-  late FaceDetector _faceDetector;
-  late BarcodeScanner _barcodeScanner;
-
   // Detection Status
   bool _faceDetected = false;
   bool _qrDetected = false;
   String? _detectedQrPayload;
-  bool _isProcessingFrame = false;
   bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
-    _initMlKit();
     _initCamera();
-  }
-
-  void _initMlKit() {
-    _faceDetector = FaceDetector(
-      options: FaceDetectorOptions(
-        enableContours: false,
-        enableLandmarks: false,
-        performanceMode: FaceDetectorMode.fast,
-      ),
-    );
-    _barcodeScanner = BarcodeScanner(
-      formats: [BarcodeFormat.qrCode],
-    );
   }
 
   Future<void> _initCamera() async {
@@ -167,8 +146,6 @@ class _DualCameraViewfinderScreenState extends State<DualCameraViewfinderScreen>
   @override
   void dispose() {
     _cameraController?.dispose();
-    _faceDetector.close();
-    _barcodeScanner.close();
     super.dispose();
   }
 
