@@ -23,6 +23,7 @@ import {
   Scan,
   Settings,
   Server,
+  Trash2,
 } from 'lucide-react';
 import { api, Employee, Organization, AttendanceLog, setApiBase, getApiBase } from '../services/api.js';
 import { StatusBadge } from '../components/StatusBadge.js';
@@ -1074,6 +1075,26 @@ export const MobileApp: React.FC = () => {
                 className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-600/20 transition"
               >
                 Save & Apply
+              </button>
+            </div>
+
+            <div className="pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm('Wipe all local employee profiles, attendance logs, and sessions to start 100% fresh?')) {
+                    localStorage.clear();
+                    setCurrentEmp(null);
+                    setMyLogs([]);
+                    setCapturedPoses({});
+                    setServerSettingsOpen(false);
+                    showToast('🧹 All employee records wiped! Ready for first registration.');
+                  }
+                }}
+                className="w-full py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Clean All Data & Start Fresh
               </button>
             </div>
           </div>
