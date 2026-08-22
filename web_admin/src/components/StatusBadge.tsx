@@ -2,7 +2,7 @@ import React from 'react';
 import { CheckCircle2, Clock, XCircle } from 'lucide-react';
 
 interface Props {
-  status: 'PRESENT' | 'LATE' | 'REJECTED';
+  status: 'PRESENT' | 'LATE' | 'REJECTED' | string;
   size?: 'sm' | 'md';
 }
 

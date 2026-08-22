@@ -21,8 +21,10 @@ import {
   LogIn,
   QrCode,
   Scan,
+  Settings,
+  Server,
 } from 'lucide-react';
-import { api, Employee, Organization, AttendanceLog } from '../services/api.js';
+import { api, Employee, Organization, AttendanceLog, setApiBase, getApiBase } from '../services/api.js';
 import { StatusBadge } from '../components/StatusBadge.js';
 import {
   detectRealFace,
@@ -179,6 +181,8 @@ export const MobileApp: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [verifyResult, setVerifyResult] = useState<any | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [serverSettingsOpen, setServerSettingsOpen] = useState(false);
+  const [customServerUrl, setCustomServerUrl] = useState(getApiBase());
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -862,16 +866,84 @@ export const MobileApp: React.FC = () => {
           </div>
         </div>
 
-        {currentEmp && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={handleLogout}
-            title="Logout"
-            className="p-2 rounded-xl bg-slate-800/80 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition"
+            type="button"
+            onClick={() => setServerSettingsOpen(true)}
+            title="Backend Server Settings"
+            className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-emerald-400 transition"
           >
-            <LogOut className="w-4 h-4" />
+            <Settings className="w-4 h-4" />
           </button>
-        )}
+          {currentEmp && (
+            <button
+              onClick={handleLogout}
+              title="Logout"
+              className="p-2 rounded-xl bg-slate-800/80 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </header>
+
+      {/* SERVER SETTINGS MODAL */}
+      {serverSettingsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                <Server className="w-5 h-5 text-emerald-400" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-white">Backend Server URL</h3>
+                <p className="text-[11px] text-slate-400">Configure Cloud or Local LAN IP</p>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-300">Server Endpoint</label>
+              <input
+                type="text"
+                placeholder="e.g. http://192.168.1.5:5000 or /api/v1"
+                value={customServerUrl}
+                onChange={(e) => setCustomServerUrl(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-mono focus:outline-none focus:border-emerald-500"
+              />
+              <p className="text-[10px] text-slate-500">
+                Leave default for built-in offline local standalone mode.
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomServerUrl('/api/v1');
+                  setApiBase('');
+                  showToast('Reset to default local standalone mode');
+                  setServerSettingsOpen(false);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+              >
+                Reset Default
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setApiBase(customServerUrl);
+                  showToast('Server URL Saved & Connected!');
+                  setServerSettingsOpen(false);
+                  fetchInitialData();
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-600/20 transition"
+              >
+                Save & Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MAIN BODY CONTENT */}
       <main className="flex-1 overflow-y-auto p-5 space-y-6">
