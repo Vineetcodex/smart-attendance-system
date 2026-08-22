@@ -34,6 +34,9 @@ jobs:
           npm install
           npm run build
           npx cap sync android
+          # Safety patch for Capacitor plugin build files
+          sed -i 's/8.13.0/8.7.2/g' android/capacitor-cordova-android-plugins/build.gradle || true
+          sed -i 's/14.0.1/10.1.1/g' android/variables.gradle || true
           yes | sdkmanager --licenses || true
           sdkmanager "platforms;android-34" "build-tools;34.0.0" || true
 
