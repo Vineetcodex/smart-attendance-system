@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">DRP Technology Attendance</string>
+    <string name="title_activity_main">DRP Technology Attendance</string>
+    <string name="package_name">com.drptech.attendance</string>
+    <string name="custom_url_scheme">com.drptech.attendance</string>
+</resources>
