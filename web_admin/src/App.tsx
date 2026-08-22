@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
 import { Sidebar } from './components/Sidebar.js';
 import { Navbar } from './components/Navbar.js';
 import { Dashboard } from './pages/Dashboard.js';
@@ -45,6 +46,9 @@ export const App: React.FC = () => {
   });
   const [org, setOrg] = useState<Organization | null>(null);
 
+  // When running inside Android APK, default directly to Employee Mobile App
+  const isNativeApp = Capacitor.isNativePlatform();
+
   const fetchOrg = async () => {
     try {
       const data = await api.getOrganization();
@@ -68,20 +72,29 @@ export const App: React.FC = () => {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Dedicated Public Mobile Employee App Route (No admin login needed) */}
-        <Route path="/mobile" element={<MobileApp />} />
+        {/* If installed as Android APK, always show the Employee Attendance App directly */}
+        {isNativeApp ? (
+          <>
+            <Route path="*" element={<MobileApp />} />
+          </>
+        ) : (
+          <>
+            {/* Dedicated Public Mobile Employee App Route for browser users */}
+            <Route path="/mobile" element={<MobileApp />} />
 
-        {/* Admin Portal Routes */}
-        <Route
-          path="/*"
-          element={
-            isAuthenticated ? (
-              <AdminLayout org={org} onLogout={handleLogout} setOrg={setOrg} />
-            ) : (
-              <Login onLoginSuccess={() => setIsAuthenticated(true)} />
-            )
-          }
-        />
+            {/* Admin Portal Routes for Web management */}
+            <Route
+              path="/*"
+              element={
+                isAuthenticated ? (
+                  <AdminLayout org={org} onLogout={handleLogout} setOrg={setOrg} />
+                ) : (
+                  <Login onLoginSuccess={() => setIsAuthenticated(true)} />
+                )
+              }
+            />
+          </>
+        )}
       </Routes>
     </BrowserRouter>
   );
