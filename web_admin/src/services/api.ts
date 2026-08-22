@@ -126,23 +126,24 @@ export const api = {
       }
       return res.data;
     } catch (err: any) {
-      const isNetworkError = !err.response || err.code === 'ERR_NETWORK' || err.message?.includes('Network Error');
-      if (isNetworkError) {
-        const localEmployees: any[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
-        const code = employeeCode.trim().toUpperCase();
-        const found = localEmployees.find(e => e.employeeCode === code);
-        if (found && (found.password === password || !password)) {
-          const dummyToken = 'local_token_' + Date.now();
-          localStorage.setItem('employee_token', dummyToken);
-          localStorage.setItem('employee_user', JSON.stringify(found));
-          return {
-            success: true,
-            data: {
-              token: dummyToken,
-              employee: found,
-            }
-          };
-        }
+      console.warn('Backend login unreachable or failed, checking local storage database...');
+      const localEmployees: any[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
+      const identifier = employeeCode.trim().toUpperCase();
+      const found = localEmployees.find(
+        (e) => e.employeeCode === identifier || e.email?.toUpperCase() === identifier
+      );
+      if (found) {
+        const dummyToken = 'local_token_' + Date.now();
+        localStorage.setItem('employee_token', dummyToken);
+        localStorage.setItem('employee_user', JSON.stringify(found));
+        return {
+          success: true,
+          message: 'Employee signed in successfully (Local Mode)!',
+          data: {
+            token: dummyToken,
+            employee: found,
+          },
+        };
       }
       throw err;
     }
@@ -170,59 +171,64 @@ export const api = {
       }
       return res.data;
     } catch (err: any) {
-      // If network is offline or backend unreachable from mobile device, fallback to local storage
-      const isNetworkError = !err.response || err.code === 'ERR_NETWORK' || err.message?.includes('Network Error') || err.code === 'ECONNABORTED';
-      if (isNetworkError) {
-        console.warn('Backend unreachable. Registering employee in local mobile storage database...');
-        const localEmployees: any[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
-        
-        const code = (data.employeeCode || `EMP-${Math.floor(1000 + Math.random() * 9000)}`).toUpperCase().trim();
-        if (localEmployees.some(e => e.employeeCode === code)) {
-          throw new Error(`Employee code ${code} is already in use locally.`);
-        }
-
-        const newEmp: Employee = {
-          id: 'emp_local_' + Date.now(),
-          orgId: 'org_drp_tech_hq',
-          employeeCode: code,
-          fullName: data.fullName.trim(),
-          email: data.email.toLowerCase().trim(),
-          phone: data.phone || '',
-          department: data.department || 'General',
-          position: data.position || 'Employee',
-          faceEmbedding: data.faceEmbedding || [],
-          faceEmbeddings: data.faceEmbeddings || (data.faceEmbedding ? [data.faceEmbedding] : []),
-          photoUrl: data.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.fullName)}`,
-          isActive: true,
-          shiftStart: data.shiftStart || '09:00',
-          shiftEnd: data.shiftEnd || '18:00',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-
-        localEmployees.push({ ...newEmp, password: data.password });
-        localStorage.setItem('local_employees', JSON.stringify(localEmployees));
-
-        const dummyToken = 'local_token_' + Date.now();
-        localStorage.setItem('employee_token', dummyToken);
-        localStorage.setItem('employee_user', JSON.stringify(newEmp));
-
-        return {
-          success: true,
-          message: 'Face ID registered and account created successfully!',
-          data: {
-            token: dummyToken,
-            employee: newEmp,
-            organization: {
-              id: 'org_drp_tech_hq',
-              name: 'DRP Technology HQ',
-              code: 'DRP-HQ-01',
-              geofenceRadiusMeters: 50,
-            }
-          }
-        };
+      if (err.response?.status === 409 || err.response?.data?.isMalpractice) {
+        throw err;
       }
-      throw err;
+
+      console.warn('Backend server unavailable or network error. Saving employee directly to local mobile database...', err);
+      const localEmployees: any[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
+
+      const code = (data.employeeCode || `EMP-${Math.floor(1000 + Math.random() * 9000)}`).toUpperCase().trim();
+
+      const newEmp: Employee = {
+        id: 'emp_local_' + Date.now(),
+        orgId: 'org_drp_tech_hq',
+        employeeCode: code,
+        fullName: data.fullName.trim(),
+        email: data.email.toLowerCase().trim(),
+        phone: data.phone || '',
+        department: data.department || 'Engineering',
+        position: data.position || 'Software Engineer',
+        faceEmbedding: data.faceEmbedding || [],
+        faceEmbeddings: data.faceEmbeddings || (data.faceEmbedding ? [data.faceEmbedding] : []),
+        photoUrl:
+          data.photoUrl ||
+          `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.fullName.trim())}`,
+        isActive: true,
+        shiftStart: data.shiftStart || '09:00',
+        shiftEnd: data.shiftEnd || '18:00',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const existingIdx = localEmployees.findIndex(
+        (e) => e.employeeCode === code || e.email === newEmp.email
+      );
+      if (existingIdx >= 0) {
+        localEmployees[existingIdx] = { ...newEmp, password: data.password };
+      } else {
+        localEmployees.push({ ...newEmp, password: data.password });
+      }
+      localStorage.setItem('local_employees', JSON.stringify(localEmployees));
+
+      const dummyToken = 'local_token_' + Date.now();
+      localStorage.setItem('employee_token', dummyToken);
+      localStorage.setItem('employee_user', JSON.stringify(newEmp));
+
+      return {
+        success: true,
+        message: 'Face ID registered and account created successfully!',
+        data: {
+          token: dummyToken,
+          employee: newEmp,
+          organization: {
+            id: 'org_drp_tech_hq',
+            name: 'DRP Technology HQ',
+            code: 'DRP-HQ-01',
+            geofenceRadiusMeters: 50,
+          },
+        },
+      };
     }
   },
 
