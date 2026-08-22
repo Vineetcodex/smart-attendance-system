@@ -127,8 +127,8 @@ export const MobileApp: React.FC = () => {
   const [signupPassword, setSignupPassword] = useState('');
   const [signupDept, setSignupDept] = useState('Engineering');
   const [signupPosition, setSignupPosition] = useState('Software Engineer');
-  const [signupShiftStart, setSignupShiftStart] = useState('09:00');
-  const [signupShiftEnd, setSignupShiftEnd] = useState('18:00');
+  const [signupShiftStart, setSignupShiftStart] = useState('Flexible 24x7');
+  const [signupShiftEnd, setSignupShiftEnd] = useState('Anytime');
   const [signupError, setSignupError] = useState<string | null>(null);
   const [isSigningUp, setIsSigningUp] = useState(false);
 
@@ -1179,22 +1179,24 @@ export const MobileApp: React.FC = () => {
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-slate-300">Shift Start / End</label>
-                    <div className="flex items-center gap-1">
-                      <input
-                        type="time"
-                        value={signupShiftStart}
-                        onChange={(e) => setSignupShiftStart(e.target.value)}
-                        className="w-full px-1.5 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white text-[11px] focus:outline-none focus:border-emerald-500"
-                      />
-                      <span className="text-slate-500 text-xs">-</span>
-                      <input
-                        type="time"
-                        value={signupShiftEnd}
-                        onChange={(e) => setSignupShiftEnd(e.target.value)}
-                        className="w-full px-1.5 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white text-[11px] focus:outline-none focus:border-emerald-500"
-                      />
-                    </div>
+                    <label className="text-xs font-medium text-slate-300">Shift Schedule</label>
+                    <select
+                      value={signupShiftStart}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSignupShiftStart(val);
+                        if (val === '09:00') setSignupShiftEnd('18:00');
+                        else if (val === '06:00') setSignupShiftEnd('15:00');
+                        else if (val === '22:00') setSignupShiftEnd('07:00');
+                        else setSignupShiftEnd('Anytime');
+                      }}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500 font-medium"
+                    >
+                      <option value="Flexible 24x7">🌟 Flexible 24x7 (Anytime Punch)</option>
+                      <option value="09:00">General Shift (09:00 - 18:00)</option>
+                      <option value="06:00">Morning Shift (06:00 - 15:00)</option>
+                      <option value="22:00">Night Shift (22:00 - 07:00)</option>
+                    </select>
                   </div>
                 </div>
 

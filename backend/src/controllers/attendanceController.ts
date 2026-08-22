@@ -130,12 +130,23 @@ export class AttendanceController {
       // Determine Overall Outcome: QR (if scanned) AND Face match AND Anti-Spoofing Liveness must pass
       const isBiometricPass = isQrValid && faceResult.isMatch && isLivenessValid;
 
-      // Check shift lateness (e.g. shift start is "09:00", tolerance 15 mins)
+      // Check shift lateness (Flexible 24x7 schedule has no time restrictions)
       const now = capturedAt ? new Date(capturedAt) : new Date();
       const currentHour = now.getHours();
       const currentMinute = now.getMinutes();
-      const [shiftHour, shiftMin] = (employee.shiftStart || '09:00').split(':').map((s) => parseInt(s, 10));
-      const isLate = currentHour > shiftHour || (currentHour === shiftHour && currentMinute > shiftMin + 15);
+
+      let isLate = false;
+      const shift = employee.shiftStart || 'Flexible 24x7';
+      if (
+        shift !== 'Flexible 24x7' &&
+        shift !== 'FLEXIBLE' &&
+        shift.includes(':')
+      ) {
+        const [shiftHour, shiftMin] = shift.split(':').map((s) => parseInt(s, 10));
+        if (!isNaN(shiftHour) && !isNaN(shiftMin)) {
+          isLate = currentHour > shiftHour || (currentHour === shiftHour && currentMinute > shiftMin + 15);
+        }
+      }
 
       const status: 'PRESENT' | 'LATE' | 'REJECTED' = isBiometricPass
         ? isLate
