@@ -84,7 +84,7 @@ npm run dev
 ## 🔑 Default Credentials
 
 ### Admin Portal
-- **URL**: `http://localhost:5173/`
+- **URL**: `http://localhost:5173/admin`
 - **Email**: `admin@drptech.com`
 - **Password**: `admin123`
 - **Role**: `SUPER_ADMIN`
