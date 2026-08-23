@@ -17,11 +17,11 @@ export class FaceService {
 
   /**
    * Evaluates distance and similarity between two face descriptor embeddings.
-   * Standard face-api.js 128-D Euclidean distance metrics:
-   * - Same individual (different lighting/angles): distance <= 0.55
-   * - Different individuals: distance > 0.60 (typically 0.75 - 1.20)
+   * Strict 128-D Euclidean distance metrics:
+   * - Same individual (with normal lighting/angles): distance <= 0.38 (Score 75% - 100%)
+   * - Different individuals / friends / impostors: distance > 0.38 (Score < 50% -> REJECTED)
    */
-  static calculateFaceDistance(vecA: number[], vecB: number[]): { distance: number; similarity: number; isMatch: boolean } {
+  static calculateFaceDistance(vecA: number[], vecB: number[], threshold: number = 0.38): { distance: number; similarity: number; isMatch: boolean } {
     if (!vecA || !vecB || vecA.length === 0 || vecB.length === 0) {
       return { distance: 999, similarity: 0, isMatch: false };
     }
@@ -35,16 +35,16 @@ export class FaceService {
     }
 
     const distance = Math.sqrt(sumSq);
-    const MATCH_THRESHOLD = 0.55;
+    const MATCH_THRESHOLD = threshold;
     const isMatch = distance <= MATCH_THRESHOLD;
 
     let similarity = 0;
     if (distance <= MATCH_THRESHOLD) {
-      // Scale from 70% to 100%
-      similarity = 0.70 + (1 - distance / MATCH_THRESHOLD) * 0.30;
+      // Legitimate match: Scale from 75% to 100%
+      similarity = 0.75 + (1 - distance / MATCH_THRESHOLD) * 0.25;
     } else {
-      // Drops below 70%
-      similarity = Math.max(0, 0.70 - ((distance - MATCH_THRESHOLD) / 0.35) * 0.70);
+      // Impostor/Friend rejection: Drops strictly below 50%
+      similarity = Math.max(0, 0.50 - ((distance - MATCH_THRESHOLD) / 0.40) * 0.50);
     }
 
     return { distance: parseFloat(distance.toFixed(4)), similarity: parseFloat(similarity.toFixed(4)), isMatch };
@@ -93,7 +93,7 @@ export class FaceService {
   static verifyFace(
     capturedEmbedding: number[],
     baselineEmbeddings: number[] | number[][],
-    _threshold: number = FaceService.DEFAULT_THRESHOLD
+    threshold: number = 0.38
   ): FaceVerificationResult {
     if (!capturedEmbedding || capturedEmbedding.length === 0) {
       return {
@@ -110,12 +110,12 @@ export class FaceService {
     let bestMatch = { distance: 999, similarity: 0, isMatch: false };
     if (Array.isArray(baselineEmbeddings) && baselineEmbeddings.length > 0) {
       if (typeof baselineEmbeddings[0] === 'number') {
-        bestMatch = this.calculateFaceDistance(capturedEmbedding, baselineEmbeddings as number[]);
+        bestMatch = this.calculateFaceDistance(capturedEmbedding, baselineEmbeddings as number[], threshold);
       } else {
         // Multi-pose list of vectors: find best matching pose
         for (const poseVec of baselineEmbeddings as number[][]) {
           if (Array.isArray(poseVec) && poseVec.length > 0) {
-            const m = this.calculateFaceDistance(capturedEmbedding, poseVec);
+            const m = this.calculateFaceDistance(capturedEmbedding, poseVec, threshold);
             if (m.distance < bestMatch.distance) {
               bestMatch = m;
             }

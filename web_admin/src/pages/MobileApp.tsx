@@ -911,13 +911,14 @@ export const MobileApp: React.FC = () => {
 
       setVerifyResult(res);
 
-      if (res.success) {
+      if (res.success && res.status !== 'REJECTED') {
         playAudioFeedback('SUCCESS');
         showToast(res.status === 'LATE' ? '⚠️ Attendance Recorded (Late)' : '🎉 Attendance Marked Successfully (QR + Face ID)!');
         fetchMyAttendanceLogs(currentEmp.id);
       } else {
         playAudioFeedback('ALERT');
-        showToast('❌ Attendance Verification Rejected');
+        const reason = res.details?.failureReason || res.message || 'Face mismatch with registered profile.';
+        showToast(`❌ Attendance Rejected: ${reason}`);
       }
     } catch (err: any) {
       playAudioFeedback('ALERT');

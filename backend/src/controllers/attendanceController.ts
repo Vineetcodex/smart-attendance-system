@@ -143,9 +143,9 @@ export class AttendanceController {
         ? employee.faceEmbeddings
         : employee.faceEmbedding;
       
-      let faceResult = { isMatch: true, similarityScore: 0.98, error: '' };
-      if (faceEmbedding && Array.isArray(faceEmbedding) && faceEmbedding.length > 0) {
-        const result = FaceService.verifyFace(faceEmbedding, baseline, 0.55);
+      let faceResult = { isMatch: false, similarityScore: 0, error: 'Facial biometric profile not registered for this employee.' };
+      if (faceEmbedding && Array.isArray(faceEmbedding) && faceEmbedding.length > 0 && baseline && (Array.isArray(baseline) ? baseline.length > 0 : true)) {
+        const result = FaceService.verifyFace(faceEmbedding, baseline, 0.38);
         faceResult = {
           isMatch: result.isMatch,
           similarityScore: result.similarityScore,

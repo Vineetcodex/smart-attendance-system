@@ -152,13 +152,13 @@ function calculateLocalDistance(vecA: number[], vecB: number[]): { distance: num
     sumSq += diff * diff;
   }
   const distance = Math.sqrt(sumSq);
-  const MATCH_THRESHOLD = 0.55;
+  const MATCH_THRESHOLD = 0.38;
   const isMatch = distance <= MATCH_THRESHOLD;
   let similarity = 0;
   if (distance <= MATCH_THRESHOLD) {
-    similarity = 0.70 + (1 - distance / MATCH_THRESHOLD) * 0.30;
+    similarity = 0.75 + (1 - distance / MATCH_THRESHOLD) * 0.25;
   } else {
-    similarity = Math.max(0, 0.70 - ((distance - MATCH_THRESHOLD) / 0.35) * 0.70);
+    similarity = Math.max(0, 0.50 - ((distance - MATCH_THRESHOLD) / 0.40) * 0.50);
   }
   return { distance: parseFloat(distance.toFixed(4)), similarity: parseFloat(similarity.toFixed(4)), isMatch };
 }
@@ -533,7 +533,7 @@ export const api = {
         baselinePoses.push(emp.faceEmbedding);
       }
 
-      let bestMatch = { isMatch: true, similarity: 0.96, distance: 0.18 };
+      let bestMatch = { isMatch: false, similarity: 0, distance: 999 };
       if (payload.faceEmbedding && payload.faceEmbedding.length > 0 && baselinePoses.length > 0) {
         let minD = 999;
         let maxS = 0;

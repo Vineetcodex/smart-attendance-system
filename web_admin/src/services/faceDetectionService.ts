@@ -638,16 +638,18 @@ export function calculateArcFaceCosineSimilarity(vecA: number[], vecB: number[])
   }
 
   const distance = Math.sqrt(sumSq);
-  const MATCH_THRESHOLD = 0.55;
+  const MATCH_THRESHOLD = 0.38;
 
-  // Match decision if distance is within standard face recognition threshold
+  // Strict match decision: distance <= 0.38 is genuine employee
   const isMatch = distance <= MATCH_THRESHOLD;
 
   let similarityScore = 0;
   if (distance <= MATCH_THRESHOLD) {
-    similarityScore = 0.70 + (1 - distance / MATCH_THRESHOLD) * 0.30;
+    // Genuine match: Scale 75% to 100%
+    similarityScore = 0.75 + (1 - distance / MATCH_THRESHOLD) * 0.25;
   } else {
-    similarityScore = Math.max(0, 0.70 - ((distance - MATCH_THRESHOLD) / 0.35) * 0.70);
+    // Impostor/Friend rejection: Drops strictly below 50%
+    similarityScore = Math.max(0, 0.50 - ((distance - MATCH_THRESHOLD) / 0.40) * 0.50);
   }
 
   return {
