@@ -45,6 +45,7 @@ router.get('/app/version', (req, res) => {
 
 // Authentication Routes
 router.post('/auth/admin-login', AuthController.adminLogin);
+router.post('/auth/login', AuthController.adminLogin);
 router.post('/auth/employee-login', AuthController.employeeLogin);
 router.post('/auth/employee-signup', AuthController.employeeSignup);
 router.post('/auth/check-face-duplicate', AuthController.checkFaceDuplicate);
