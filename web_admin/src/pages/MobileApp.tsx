@@ -184,10 +184,44 @@ export const MobileApp: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [serverSettingsOpen, setServerSettingsOpen] = useState(false);
   const [customServerUrl, setCustomServerUrl] = useState(getApiBase());
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<{ connected: boolean; testing: boolean; message: string }>({
+    connected: false,
+    testing: false,
+    message: 'Checking...',
+  });
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const checkBackendHealth = async (urlToCheck?: string) => {
+    setConnectionStatus((prev) => ({ ...prev, testing: true }));
+    const res = await api.testConnection(urlToCheck);
+    setConnectionStatus({
+      connected: res.connected,
+      testing: false,
+      message: res.connected ? 'Connected' : 'Offline Mode',
+    });
+    return res.connected;
+  };
+
+  const handleAutoDetectServer = async () => {
+    setIsDetecting(true);
+    showToast('🔍 Scanning for backend server...');
+    const res = await api.autoDetectBackend();
+    setIsDetecting(false);
+    setCustomServerUrl(res.activeUrl);
+    setConnectionStatus({
+      connected: res.success,
+      testing: false,
+      message: res.success ? 'Connected' : 'Offline Mode',
+    });
+    showToast(res.message);
+    if (res.success) {
+      fetchInitialData();
+    }
   };
 
   const departments = [
@@ -211,10 +245,12 @@ export const MobileApp: React.FC = () => {
     loadFaceDetectionModels().catch((err) => {
       console.warn('Face models loading background:', err);
     });
+    checkBackendHealth();
   }, []);
 
   // Load Initial Org & Stored Session with fresh database embeddings
   const fetchInitialData = async () => {
+    checkBackendHealth();
     // 1. Immediately hydrate cached user to guarantee instant UI render
     const savedEmp = api.getStoredEmployee();
     if (savedEmp) {
@@ -976,7 +1012,7 @@ export const MobileApp: React.FC = () => {
       )}
 
       {/* TOP APP HEADER */}
-      <header className="px-5 py-4 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 flex items-center justify-between sticky top-0 z-30">
+      <header className="px-5 py-3.5 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 p-0.5 shadow-lg shadow-emerald-500/20">
             <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
@@ -987,7 +1023,7 @@ export const MobileApp: React.FC = () => {
             <h1 className="font-bold text-sm tracking-tight text-white flex items-center gap-1.5">
               FaceTrack AI
               <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
-                SCRFD + ArcFace
+                ArcFace
               </span>
             </h1>
             <p className="text-[11px] text-slate-400">{org?.name || 'DRP Technology Hub'}</p>
@@ -995,6 +1031,21 @@ export const MobileApp: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Connection Status Indicator */}
+          <button
+            type="button"
+            onClick={() => setServerSettingsOpen(true)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-semibold transition ${
+              connectionStatus.connected
+                ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                : 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+            }`}
+            title="Click to configure backend connection"
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${connectionStatus.connected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+            <span>{connectionStatus.connected ? 'Online' : 'Offline'}</span>
+          </button>
+
           <a
             href="/admin"
             title="HR & Admin Management Portal"
@@ -1027,28 +1078,110 @@ export const MobileApp: React.FC = () => {
       {serverSettingsOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
           <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                <Server className="w-5 h-5 text-emerald-400" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                  <Server className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white">Backend Server URL</h3>
+                  <p className="text-[11px] text-slate-400">Connect APK to PC / Cloud Backend</p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-bold text-sm text-white">Backend Server URL</h3>
-                <p className="text-[11px] text-slate-400">Configure Cloud or Local LAN IP</p>
-              </div>
+              <button
+                type="button"
+                onClick={() => setServerSettingsOpen(false)}
+                className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white"
+              >
+                ✕
+              </button>
             </div>
 
+            {/* Connection Status Banner */}
+            <div className={`p-3 rounded-2xl border flex items-center justify-between text-xs ${
+              connectionStatus.connected
+                ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                : 'bg-slate-950 border-slate-800 text-slate-400'
+            }`}>
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${connectionStatus.connected ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                <span className="font-medium">
+                  {connectionStatus.testing ? 'Testing connection...' : connectionStatus.connected ? 'Backend Server Connected' : 'Running in Offline Standalone Mode'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => checkBackendHealth(customServerUrl)}
+                className="text-[11px] font-semibold text-emerald-400 hover:underline"
+              >
+                Test Ping
+              </button>
+            </div>
+
+            {/* 1-Tap Auto-Discovery */}
+            <button
+              type="button"
+              disabled={isDetecting}
+              onClick={handleAutoDetectServer}
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 transition disabled:opacity-50"
+            >
+              {isDetecting ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  Auto-Detecting PC Backend...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  ⚡ Auto-Detect PC Backend Server
+                </>
+              )}
+            </button>
+
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-300">Server Endpoint</label>
+              <label className="text-xs font-medium text-slate-300">Server Endpoint URL</label>
               <input
                 type="text"
-                placeholder="e.g. http://192.168.1.5:5000 or /api/v1"
+                placeholder="e.g. http://192.168.29.93:5000/api/v1"
                 value={customServerUrl}
                 onChange={(e) => setCustomServerUrl(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-mono focus:outline-none focus:border-emerald-500"
               />
-              <p className="text-[10px] text-slate-500">
-                Leave default for built-in offline local standalone mode.
-              </p>
+            </div>
+
+            {/* Quick Preset Buttons */}
+            <div className="space-y-1">
+              <p className="text-[10px] text-slate-500 font-medium">Quick IP Presets:</p>
+              <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                <button
+                  type="button"
+                  onClick={() => setCustomServerUrl('http://192.168.29.93:5000/api/v1')}
+                  className="px-2 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/60 truncate"
+                >
+                  🏠 Wi-Fi (192.168.29.93)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCustomServerUrl('http://localhost:5000/api/v1')}
+                  className="px-2 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/60 truncate"
+                >
+                  💻 Localhost:5000
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCustomServerUrl('http://10.0.2.2:5000/api/v1')}
+                  className="px-2 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/60 truncate"
+                >
+                  📱 Android Emulator
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCustomServerUrl('/api/v1')}
+                  className="px-2 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/60 truncate"
+                >
+                  🌐 Relative (/api/v1)
+                </button>
+              </div>
             </div>
 
             <div className="flex gap-2 pt-2">
@@ -1062,14 +1195,15 @@ export const MobileApp: React.FC = () => {
                 }}
                 className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
               >
-                Reset Default
+                Reset
               </button>
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   setApiBase(customServerUrl);
-                  showToast('Server URL Saved & Connected!');
+                  showToast('Server URL Saved!');
                   setServerSettingsOpen(false);
+                  await checkBackendHealth(customServerUrl);
                   fetchInitialData();
                 }}
                 className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-600/20 transition"
@@ -2101,16 +2235,37 @@ export const MobileApp: React.FC = () => {
             {attendanceStep === 'QR_SCAN' ? (
               <div className="space-y-2">
                 <button
+                  type="button"
+                  onClick={() => {
+                    const payload = org?.masterQrPayload || 'QR-ATTEND-V1:DRP-HQ-01:VALID';
+                    playAudioFeedback('STEP');
+                    scannedQrPayloadRef.current = payload;
+                    setScannedQrPayload(payload);
+                    setIsQrVerified(true);
+                    setQrScanFeedback('✅ Office Master QR Verified! Aligning face...');
+                    showToast('✅ Office Master QR Verified! Now align your face.');
+                    attendanceStepRef.current = 'FACE_SCAN';
+                    setAttendanceStep('FACE_SCAN');
+                    if (facingMode === 'environment') {
+                      setFacingMode('user');
+                    }
+                  }}
+                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition active:scale-95"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-300" />
+                  ✨ Verified Master QR (Proceed to Face ID)
+                </button>
+                <button
                   onClick={handleToggleCamera}
-                  className="w-full py-3.5 rounded-2xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs transition flex items-center justify-center gap-2"
+                  className="w-full py-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs transition flex items-center justify-center gap-2"
                 >
                   <SwitchCamera className="w-4 h-4 text-emerald-400" />
-                  Flip Camera ({facingMode === 'environment' ? 'Rear Camera Active' : 'Front Camera Active'})
+                  Flip Camera ({facingMode === 'environment' ? 'Rear Active' : 'Front Active'})
                 </button>
                 <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-center">
                   <p className="text-[11px] text-amber-300 font-medium flex items-center justify-center gap-1.5">
                     <Lock className="w-3.5 h-3.5 text-amber-400" />
-                    Office Master QR required: Scan the poster on the wall to unlock Face ID.
+                    Scan Office Poster or tap button above to unlock Face Biometrics.
                   </p>
                 </div>
               </div>

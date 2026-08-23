@@ -31,7 +31,7 @@ async function testDuplicateSignup() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ faceEmbedding: normalizedProbe }),
     });
-    const checkData = await checkRes.json();
+    const checkData: any = await checkRes.json();
     console.log('Check endpoint response:', checkData);
     if (checkData.isDuplicate) {
       console.log('✅ Proactive check SUCCESS: Duplicate correctly detected!');
@@ -56,7 +56,7 @@ async function testDuplicateSignup() {
         faceEmbedding: normalizedProbe,
       }),
     });
-    const signupData = await signupRes.json();
+    const signupData: any = await signupRes.json();
     if (signupRes.status === 409 && signupData.isMalpractice) {
       console.log('✅ Signup REJECTED as expected (HTTP 409 Conflict):');
       console.log('   Message:', signupData.message);

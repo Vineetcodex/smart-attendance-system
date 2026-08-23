@@ -77,20 +77,20 @@ cd web_admin
 npm install
 npm run dev
 ```
-*Portal runs on `https://localhost:5173/`*
+*Portal runs on `http://localhost:5173/`*
 
 ---
 
 ## 🔑 Default Credentials
 
 ### Admin Portal
-- **URL**: `https://localhost:5173/`
+- **URL**: `http://localhost:5173/`
 - **Email**: `admin@drptech.com`
 - **Password**: `admin123`
 - **Role**: `SUPER_ADMIN`
 
 ### Employee Portal (Web / Mobile)
-- **URL**: `https://localhost:5173/mobile`
+- **URL**: `http://localhost:5173/mobile`
 - **Default Employee Code**: `EMP-1001` (or self-signup with live Face ID)
 - **Password**: `password123`
 

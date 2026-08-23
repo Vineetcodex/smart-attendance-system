@@ -7,9 +7,30 @@ import { authenticateJwt, requireAdmin } from '../middleware/authMiddleware.js';
 
 const router = Router();
 
+import os from 'os';
+
 // Health Check & Version Info
 router.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString(), service: 'Attendance Verification API' });
+});
+
+router.get('/network-info', (req, res) => {
+  const networkInterfaces = os.networkInterfaces();
+  const localIps: string[] = [];
+  for (const iface of Object.values(networkInterfaces)) {
+    if (!iface) continue;
+    for (const alias of iface) {
+      if (alias.family === 'IPv4' && !alias.internal) {
+        localIps.push(alias.address);
+      }
+    }
+  }
+  res.json({
+    status: 'healthy',
+    port: process.env.PORT || 5000,
+    localIps,
+    recommendedEndpoints: localIps.map((ip) => `http://${ip}:${process.env.PORT || 5000}/api/v1`),
+  });
 });
 
 router.get('/app/version', (req, res) => {

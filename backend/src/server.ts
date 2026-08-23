@@ -43,19 +43,36 @@ app.get('/', (req, res) => {
   });
 });
 
-// Auto-seed if database is empty
-if (!db.getPrimaryOrganization()) {
+import os from 'os';
+
+// Auto-seed if database is empty or has no employees
+if (!db.getPrimaryOrganization() || db.getEmployees().length === 0) {
   seedDatabase().catch((err) => console.error('Error auto-seeding database:', err));
+}
+
+// Find local IPv4 addresses
+const networkInterfaces = os.networkInterfaces();
+const localIps: string[] = [];
+for (const iface of Object.values(networkInterfaces)) {
+  if (!iface) continue;
+  for (const alias of iface) {
+    if (alias.family === 'IPv4' && !alias.internal) {
+      localIps.push(alias.address);
+    }
+  }
 }
 
 // Start Server
 app.listen(config.port, '0.0.0.0', () => {
   console.log(`=======================================================`);
   console.log(`🚀 DRP Technology Attendance Server running on port ${config.port}`);
-  console.log(`🌐 Local URL:   http://localhost:${config.port}`);
-  console.log(`📡 SSE Stream:  http://localhost:${config.port}/api/v1/attendance/stream`);
-  console.log(`🔑 Admin Login: admin@drptech.com / admin123`);
-  console.log(`👤 Emp Login:   EMP-1001 / password123`);
+  console.log(`🌐 Local URL:      http://localhost:${config.port}`);
+  for (const ip of localIps) {
+    console.log(`📱 Mobile APK URL: http://${ip}:${config.port}/api/v1`);
+  }
+  console.log(`📡 SSE Stream:     http://localhost:${config.port}/api/v1/attendance/stream`);
+  console.log(`🔑 Admin Login:    admin@drptech.com / admin123`);
+  console.log(`👤 Emp Login:      EMP-1001 / password123`);
   console.log(`=======================================================`);
 });
 

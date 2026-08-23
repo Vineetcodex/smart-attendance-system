@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { db, AttendanceLog } from '../db/database.js';
+import { db, AttendanceLog, Employee } from '../db/database.js';
 import { QrService } from '../services/qrService.js';
 import { GeoService } from '../services/geoService.js';
 import { FaceService } from '../services/faceService.js';
@@ -65,18 +65,57 @@ export class AttendanceController {
       } = req.body;
 
       const targetEmpId = employeeId || req.user?.id;
-      if (!targetEmpId) {
+      if (!targetEmpId && !req.body.employeeCode && !req.body.employeeProfile) {
         return res.status(400).json({ success: false, message: 'Employee ID is required.' });
       }
 
-      const employee = db.getEmployeeById(targetEmpId);
-      if (!employee || !employee.isActive) {
-        return res.status(404).json({ success: false, message: 'Employee account not found or deactivated.' });
+      let employee = targetEmpId ? db.getEmployeeById(targetEmpId) : undefined;
+      if (!employee && targetEmpId) {
+        employee = db.getEmployeeByCode(targetEmpId) || db.getEmployeeByEmail(targetEmpId);
+      }
+      if (!employee && req.body.employeeCode) {
+        employee = db.getEmployeeByCode(req.body.employeeCode);
       }
 
-      const org = db.getOrganizationById(employee.orgId) || db.getPrimaryOrganization();
+      const org = (employee ? db.getOrganizationById(employee.orgId) : undefined) || db.getPrimaryOrganization();
       if (!org) {
         return res.status(500).json({ success: false, message: 'Organization configuration missing.' });
+      }
+
+      // Auto-sync employee profile if registered on mobile client
+      if (!employee && req.body.employeeProfile) {
+        const p = req.body.employeeProfile;
+        const code = (p.employeeCode || `EMP-${Date.now().toString().slice(-4)}`).toUpperCase().trim();
+        const existingByCode = db.getEmployeeByCode(code);
+        if (existingByCode) {
+          employee = existingByCode;
+        } else {
+          const newEmp: Employee = {
+            id: p.id && !p.id.startsWith('emp_local_') ? p.id : uuidv4(),
+            orgId: org.id,
+            employeeCode: code,
+            fullName: p.fullName?.trim() || 'Mobile Employee',
+            email: p.email?.toLowerCase().trim() || `${code.toLowerCase()}@drptech.com`,
+            phone: p.phone || '',
+            department: p.department || 'Engineering',
+            position: p.position || 'Software Engineer',
+            passwordHash: '',
+            faceEmbedding: p.faceEmbedding || faceEmbedding || [],
+            faceEmbeddings: p.faceEmbeddings || (p.faceEmbedding ? [p.faceEmbedding] : (faceEmbedding ? [faceEmbedding] : [])),
+            photoUrl: p.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(p.fullName || code)}`,
+            isActive: true,
+            shiftStart: p.shiftStart || '09:00',
+            shiftEnd: p.shiftEnd || '18:00',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          db.createEmployee(newEmp);
+          employee = newEmp;
+        }
+      }
+
+      if (!employee || !employee.isActive) {
+        return res.status(404).json({ success: false, message: 'Employee account not found or deactivated.' });
       }
 
       // -------------------------------------------------------------
