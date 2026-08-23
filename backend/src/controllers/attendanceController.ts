@@ -145,11 +145,11 @@ export class AttendanceController {
       
       let faceResult = { isMatch: false, similarityScore: 0, error: 'Facial biometric profile not registered for this employee.' };
       if (faceEmbedding && Array.isArray(faceEmbedding) && faceEmbedding.length > 0 && baseline && (Array.isArray(baseline) ? baseline.length > 0 : true)) {
-        const result = FaceService.verifyFace(faceEmbedding, baseline, 0.38);
+        const result = FaceService.verifyFace(faceEmbedding, baseline, 0.30);
         faceResult = {
-          isMatch: result.isMatch,
+          isMatch: result.isMatch && result.similarityScore >= 0.85,
           similarityScore: result.similarityScore,
-          error: result.error || '',
+          error: result.error || (result.similarityScore < 0.85 ? `Face match score was ${(result.similarityScore * 100).toFixed(1)}% (minimum 85.0% required).` : ''),
         };
       }
 

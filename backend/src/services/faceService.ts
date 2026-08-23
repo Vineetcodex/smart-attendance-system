@@ -18,10 +18,10 @@ export class FaceService {
   /**
    * Evaluates distance and similarity between two face descriptor embeddings.
    * Strict 128-D Euclidean distance metrics:
-   * - Same individual (with normal lighting/angles): distance <= 0.38 (Score 75% - 100%)
-   * - Different individuals / friends / impostors: distance > 0.38 (Score < 50% -> REJECTED)
+   * - Same individual (with high biometric confidence): distance <= 0.30 (Score 85% - 100% -> VERIFIED)
+   * - Different individuals / friends / impostors: distance > 0.30 (Score < 60% -> REJECTED)
    */
-  static calculateFaceDistance(vecA: number[], vecB: number[], threshold: number = 0.38): { distance: number; similarity: number; isMatch: boolean } {
+  static calculateFaceDistance(vecA: number[], vecB: number[], threshold: number = 0.30): { distance: number; similarity: number; isMatch: boolean } {
     if (!vecA || !vecB || vecA.length === 0 || vecB.length === 0) {
       return { distance: 999, similarity: 0, isMatch: false };
     }
@@ -35,17 +35,18 @@ export class FaceService {
     }
 
     const distance = Math.sqrt(sumSq);
-    const MATCH_THRESHOLD = threshold;
-    const isMatch = distance <= MATCH_THRESHOLD;
+    const MATCH_THRESHOLD = threshold; // 0.30 max Euclidean distance for >= 85% match
 
     let similarity = 0;
     if (distance <= MATCH_THRESHOLD) {
-      // Legitimate match: Scale from 75% to 100%
-      similarity = 0.75 + (1 - distance / MATCH_THRESHOLD) * 0.25;
+      // Legitimate match: Scale strictly from 85% to 100%
+      similarity = 0.85 + (1 - distance / MATCH_THRESHOLD) * 0.15;
     } else {
-      // Impostor/Friend rejection: Drops strictly below 50%
-      similarity = Math.max(0, 0.50 - ((distance - MATCH_THRESHOLD) / 0.40) * 0.50);
+      // Impostor/Friend rejection: Drops strictly below 60% (fails the >= 85% requirement)
+      similarity = Math.max(0, 0.60 - ((distance - MATCH_THRESHOLD) / 0.35) * 0.60);
     }
+
+    const isMatch = distance <= MATCH_THRESHOLD && similarity >= 0.85;
 
     return { distance: parseFloat(distance.toFixed(4)), similarity: parseFloat(similarity.toFixed(4)), isMatch };
   }
@@ -93,7 +94,7 @@ export class FaceService {
   static verifyFace(
     capturedEmbedding: number[],
     baselineEmbeddings: number[] | number[][],
-    threshold: number = 0.38
+    threshold: number = 0.30
   ): FaceVerificationResult {
     if (!capturedEmbedding || capturedEmbedding.length === 0) {
       return {
@@ -124,7 +125,7 @@ export class FaceService {
       }
     }
 
-    const isMatch = bestMatch.isMatch;
+    const isMatch = bestMatch.isMatch && bestMatch.similarity >= 0.85;
 
     return {
       isMatch,
@@ -134,7 +135,7 @@ export class FaceService {
       matchType: '1:1_VERIFICATION',
       error: isMatch
         ? undefined
-        : `Facial biometric mismatch (Match Score: ${(bestMatch.similarity * 100).toFixed(1)}%). Face does not match registered employee.`,
+        : `Facial match score was ${(bestMatch.similarity * 100).toFixed(1)}%. Minimum 85.0% match required to verify attendance.`,
     };
   }
 

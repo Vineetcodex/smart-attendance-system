@@ -638,19 +638,19 @@ export function calculateArcFaceCosineSimilarity(vecA: number[], vecB: number[])
   }
 
   const distance = Math.sqrt(sumSq);
-  const MATCH_THRESHOLD = 0.38;
-
-  // Strict match decision: distance <= 0.38 is genuine employee
-  const isMatch = distance <= MATCH_THRESHOLD;
+  const MATCH_THRESHOLD = 0.30; // Strict threshold for >= 85% biometric match
 
   let similarityScore = 0;
   if (distance <= MATCH_THRESHOLD) {
-    // Genuine match: Scale 75% to 100%
-    similarityScore = 0.75 + (1 - distance / MATCH_THRESHOLD) * 0.25;
+    // Genuine match: Scale strictly from 85% to 100%
+    similarityScore = 0.85 + (1 - distance / MATCH_THRESHOLD) * 0.15;
   } else {
-    // Impostor/Friend rejection: Drops strictly below 50%
-    similarityScore = Math.max(0, 0.50 - ((distance - MATCH_THRESHOLD) / 0.40) * 0.50);
+    // Impostor/Friend rejection: Drops strictly below 60%
+    similarityScore = Math.max(0, 0.60 - ((distance - MATCH_THRESHOLD) / 0.35) * 0.60);
   }
+
+  // Strict match decision: Must be >= 85% (0.85) to verify
+  const isMatch = distance <= MATCH_THRESHOLD && similarityScore >= 0.85;
 
   return {
     isMatch,

@@ -575,10 +575,10 @@ export const MobileApp: React.FC = () => {
             }
 
             setLiveSimilarityScore(bestMatch.similarityScore);
-            const isMatch = bestMatch.isMatch && faceResult.antiSpoofing.isLive;
+            const isMatch = bestMatch.isMatch && bestMatch.similarityScore >= 0.85 && faceResult.antiSpoofing.isLive;
             setIsFaceMatch(isMatch);
 
-            // Fast Auto-Capture: 250ms sustained lock
+            // Fast Auto-Capture: 250ms sustained lock only when match >= 85%
             if (isMatch && !isProcessing) {
               if (!attendanceHoldStartTime.current) {
                 attendanceHoldStartTime.current = Date.now();
@@ -2209,10 +2209,10 @@ export const MobileApp: React.FC = () => {
                         className={`text-xs font-mono font-bold px-2 py-0.5 rounded-lg ${
                           isFaceMatch
                             ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            : 'bg-slate-800 text-slate-300'
+                            : 'bg-slate-800 text-slate-400'
                         }`}
                       >
-                        Match: {(liveSimilarityScore * 100).toFixed(1)}%
+                        Match: {(liveSimilarityScore * 100).toFixed(1)}% {isFaceMatch ? '✅' : '(Req: ≥85%)'}
                       </span>
                     )}
                   </div>

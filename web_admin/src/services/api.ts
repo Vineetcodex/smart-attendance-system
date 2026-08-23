@@ -152,14 +152,14 @@ function calculateLocalDistance(vecA: number[], vecB: number[]): { distance: num
     sumSq += diff * diff;
   }
   const distance = Math.sqrt(sumSq);
-  const MATCH_THRESHOLD = 0.38;
-  const isMatch = distance <= MATCH_THRESHOLD;
+  const MATCH_THRESHOLD = 0.30; // Enforce >= 85% match
   let similarity = 0;
   if (distance <= MATCH_THRESHOLD) {
-    similarity = 0.75 + (1 - distance / MATCH_THRESHOLD) * 0.25;
+    similarity = 0.85 + (1 - distance / MATCH_THRESHOLD) * 0.15;
   } else {
-    similarity = Math.max(0, 0.50 - ((distance - MATCH_THRESHOLD) / 0.40) * 0.50);
+    similarity = Math.max(0, 0.60 - ((distance - MATCH_THRESHOLD) / 0.35) * 0.60);
   }
+  const isMatch = distance <= MATCH_THRESHOLD && similarity >= 0.85;
   return { distance: parseFloat(distance.toFixed(4)), similarity: parseFloat(similarity.toFixed(4)), isMatch };
 }
 
