@@ -497,6 +497,7 @@ export const api = {
   async verifyAttendance(payload: {
     employeeId: string;
     qrPayload?: string;
+    qrScannedAt?: number;
     faceEmbedding: number[];
     livenessScore?: number;
     antiSpoofPassed?: boolean;
@@ -518,10 +519,24 @@ export const api = {
       const res = await apiClient.post('/attendance/verify', enrichedPayload);
       return res.data;
     } catch (err: any) {
+      // If server explicitly returned rejection response (e.g. 422 expired QR or face mismatch), pass it back
+      if (err.response && err.response.data && err.response.status === 422) {
+        return err.response.data;
+      }
+
       // If network error, offline mode, or local employee (status 404/0/502)
       const emp = storedEmp;
       if (!emp) {
         throw err;
+      }
+
+      // Check 90s QR expiration if in offline fallback
+      let isQrTimeValid = true;
+      if (payload.qrScannedAt) {
+        const elapsed = Date.now() - Number(payload.qrScannedAt);
+        if (elapsed > 95000) {
+          isQrTimeValid = false;
+        }
       }
 
       // Perform local biometric verification against registered poses
@@ -549,7 +564,7 @@ export const api = {
         bestMatch = { isMatch: matched, similarity: maxS, distance: minD };
       }
 
-      const isBiometricPass = bestMatch.isMatch && (payload.antiSpoofPassed !== false);
+      const isBiometricPass = isQrTimeValid && bestMatch.isMatch && (payload.antiSpoofPassed !== false);
 
       // Check shift lateness
       const now = payload.capturedAt ? new Date(payload.capturedAt) : new Date();

@@ -53,6 +53,7 @@ export class AttendanceController {
       const {
         employeeId,
         qrPayload,
+        qrScannedAt,
         faceEmbedding,
         livenessScore = 0.95,
         antiSpoofPassed = true,
@@ -130,7 +131,22 @@ export class AttendanceController {
         const qrResult = QrService.verifyMasterPayload(qrPayload, org.id);
         isQrValid = qrResult.isValid;
         if (qrResult.isValid) {
-          verificationMethod = 'DUAL_QR_FACE';
+          // Check 90-second expiration window between QR scan and Face verification
+          if (qrScannedAt) {
+            const scannedTimestamp = typeof qrScannedAt === 'string' ? new Date(qrScannedAt).getTime() : Number(qrScannedAt);
+            if (!isNaN(scannedTimestamp)) {
+              const elapsedMs = Date.now() - scannedTimestamp;
+              // Strict 90s window (+5s network latency allowance)
+              if (elapsedMs > 95000) {
+                isQrValid = false;
+                qrError = `QR Code scan session expired (${Math.round(elapsedMs / 1000)}s elapsed, maximum allowed is 90s). Please re-scan the Master QR code.`;
+              }
+            }
+          }
+
+          if (isQrValid) {
+            verificationMethod = 'DUAL_QR_FACE';
+          }
         } else {
           qrError = qrResult.error || 'Invalid Master QR Code.';
         }

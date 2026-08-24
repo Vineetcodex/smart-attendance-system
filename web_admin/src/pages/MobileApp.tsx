@@ -24,6 +24,8 @@ import {
   Settings,
   Server,
   Trash2,
+  Timer,
+  RotateCcw,
 } from 'lucide-react';
 import { api, Employee, Organization, AttendanceLog, setApiBase, getApiBase } from '../services/api.js';
 import { StatusBadge } from '../components/StatusBadge.js';
@@ -164,6 +166,11 @@ export const MobileApp: React.FC = () => {
   const [isQrVerified, setIsQrVerified] = useState(false);
   const [qrScanFeedback, setQrScanFeedback] = useState<string>('Point camera at the Office Master QR poster on the wall');
 
+  // 90-Second Countdown Window from QR Scan to Biometric Face ID Verification
+  const [qrTimerSeconds, setQrTimerSeconds] = useState<number>(90);
+  const [qrScannedTimestamp, setQrScannedTimestamp] = useState<number | null>(null);
+  const qrScannedTimestampRef = useRef<number | null>(null);
+
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -177,6 +184,42 @@ export const MobileApp: React.FC = () => {
   const [isFaceMatch, setIsFaceMatch] = useState(false);
   const [autoCaptureProgress, setAutoCaptureProgress] = useState(0); // 0 to 100%
   const attendanceHoldStartTime = useRef<number | null>(null);
+
+  // -------------------------------------------------------------
+  // 90-SECOND ACTIVE COUNTDOWN TIMER FOR BIOMETRIC FACE ID
+  // -------------------------------------------------------------
+  useEffect(() => {
+    let timerInterval: any = null;
+    if (isAttendanceCameraActive && attendanceStep === 'FACE_SCAN' && qrScannedTimestampRef.current) {
+      timerInterval = setInterval(() => {
+        if (!qrScannedTimestampRef.current) return;
+        const elapsedSec = Math.floor((Date.now() - qrScannedTimestampRef.current) / 1000);
+        const remaining = Math.max(0, 90 - elapsedSec);
+        setQrTimerSeconds(remaining);
+
+        if (remaining <= 0) {
+          // 90-SECOND TIME EXPIRED: Block face verification & reset to Step 1 (QR scan)
+          clearInterval(timerInterval);
+          playAudioFeedback('ALERT');
+          scannedQrPayloadRef.current = null;
+          setScannedQrPayload(null);
+          setIsQrVerified(false);
+          qrScannedTimestampRef.current = null;
+          setQrScannedTimestamp(null);
+          attendanceStepRef.current = 'QR_SCAN';
+          setAttendanceStep('QR_SCAN');
+          setQrTimerSeconds(90);
+          setQrScanFeedback('⏱️ 90-Second Window Expired! Please re-scan Office Master QR poster.');
+          showToast('⏱️ QR Session Expired (90s limit). Please re-scan QR poster.');
+        }
+      }, 500);
+    } else if (attendanceStep === 'QR_SCAN') {
+      setQrTimerSeconds(90);
+    }
+    return () => {
+      if (timerInterval) clearInterval(timerInterval);
+    };
+  }, [isAttendanceCameraActive, attendanceStep]);
 
   // Verification Processing State
   const [isProcessing, setIsProcessing] = useState(false);
@@ -524,11 +567,15 @@ export const MobileApp: React.FC = () => {
             const validation = validateMasterQr(qrResult.data, org);
             if (validation.isValid) {
               playAudioFeedback('STEP');
+              const now = Date.now();
+              qrScannedTimestampRef.current = now;
+              setQrScannedTimestamp(now);
+              setQrTimerSeconds(90);
               scannedQrPayloadRef.current = qrResult.data;
               setScannedQrPayload(qrResult.data);
               setIsQrVerified(true);
               setQrScanFeedback('✅ Office Master QR Verified! Aligning face...');
-              showToast('✅ Office Master QR Verified! Now align your face.');
+              showToast('✅ Office Master QR Verified! 90s Face Scan window started.');
 
               // Instantly transition to Face Verification in the same camera view
               attendanceStepRef.current = 'FACE_SCAN';
@@ -874,6 +921,22 @@ export const MobileApp: React.FC = () => {
   ) => {
     if (!currentEmp || isProcessing) return;
 
+    // Strict 90-second expiration check
+    if (qrScannedTimestampRef.current && Date.now() - qrScannedTimestampRef.current > 90_000) {
+      playAudioFeedback('ALERT');
+      scannedQrPayloadRef.current = null;
+      setScannedQrPayload(null);
+      setIsQrVerified(false);
+      qrScannedTimestampRef.current = null;
+      setQrScannedTimestamp(null);
+      attendanceStepRef.current = 'QR_SCAN';
+      setAttendanceStep('QR_SCAN');
+      setQrTimerSeconds(90);
+      setQrScanFeedback('⏱️ 90-Second Window Expired! Please re-scan Office Master QR poster.');
+      showToast('⏱️ 90s Limit Expired! Please re-scan QR poster.');
+      return;
+    }
+
     setIsProcessing(true);
     playAudioFeedback('SHUTTER');
 
@@ -899,6 +962,7 @@ export const MobileApp: React.FC = () => {
       const res = await api.verifyAttendance({
         employeeId: currentEmp.id,
         qrPayload: qrPayloadToSend,
+        qrScannedAt: qrScannedTimestampRef.current || qrScannedTimestamp || undefined,
         faceEmbedding: faceData.descriptor || [],
         livenessScore: faceData.antiSpoofing.livenessScore,
         antiSpoofPassed: faceData.antiSpoofing.isLive,
@@ -1675,6 +1739,9 @@ export const MobileApp: React.FC = () => {
                       setIsQrVerified(false);
                       setScannedQrPayload(null);
                       scannedQrPayloadRef.current = null;
+                      setQrTimerSeconds(90);
+                      setQrScannedTimestamp(null);
+                      qrScannedTimestampRef.current = null;
                       setQrScanFeedback('Point camera at the Office Master QR poster on the wall');
                       setFacingMode('environment'); // default to rear camera for wall poster
                       setIsAttendanceCameraActive(true);
@@ -2086,7 +2153,7 @@ export const MobileApp: React.FC = () => {
               </div>
             </div>
 
-            {/* Interactive 2-Step Progress Indicator */}
+            {/* Interactive 2-Step Progress Indicator with 90s Active Countdown */}
             <div className="grid grid-cols-2 gap-2">
               <div
                 className={`py-1.5 px-3 rounded-xl border text-center text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
@@ -2101,14 +2168,34 @@ export const MobileApp: React.FC = () => {
                 <span>1. Master QR {isQrVerified ? '✅' : ''}</span>
               </div>
               <div
-                className={`py-1.5 px-3 rounded-xl border text-center text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
+                className={`py-1.5 px-3 rounded-xl border text-center text-xs font-semibold flex items-center justify-between transition ${
                   attendanceStep === 'FACE_SCAN'
-                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 animate-pulse'
+                    ? qrTimerSeconds <= 10
+                      ? 'bg-rose-500/20 border-rose-400 text-rose-300 animate-pulse'
+                      : qrTimerSeconds <= 30
+                      ? 'bg-amber-500/20 border-amber-400 text-amber-300'
+                      : 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
                     : 'bg-slate-900 border-slate-800 text-slate-500'
                 }`}
               >
-                <User className="w-3.5 h-3.5" />
-                <span>2. Face ID Biometrics</span>
+                <div className="flex items-center gap-1.5 truncate">
+                  <User className="w-3.5 h-3.5" />
+                  <span>2. Face ID</span>
+                </div>
+                {attendanceStep === 'FACE_SCAN' && (
+                  <span
+                    className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0 ${
+                      qrTimerSeconds <= 10
+                        ? 'bg-rose-950 text-rose-300 border border-rose-500/50 animate-bounce'
+                        : qrTimerSeconds <= 30
+                        ? 'bg-amber-950 text-amber-300 border border-amber-500/50'
+                        : 'bg-emerald-950 text-emerald-300 border border-emerald-500/50'
+                    }`}
+                  >
+                    <Timer className="w-3 h-3" />
+                    {qrTimerSeconds}s
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -2126,6 +2213,22 @@ export const MobileApp: React.FC = () => {
                   muted
                   className={`w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`}
                 />
+
+                {/* 90s Countdown Linear Progress Gauge */}
+                {attendanceStep === 'FACE_SCAN' && (
+                  <div className="absolute top-0 inset-x-0 z-20 h-1.5 bg-slate-900/80">
+                    <div
+                      className={`h-full transition-all duration-300 ${
+                        qrTimerSeconds <= 10
+                          ? 'bg-rose-500'
+                          : qrTimerSeconds <= 30
+                          ? 'bg-amber-400'
+                          : 'bg-gradient-to-r from-emerald-400 to-teal-300'
+                      }`}
+                      style={{ width: `${(qrTimerSeconds / 90) * 100}%` }}
+                    />
+                  </div>
+                )}
 
                 {/* -------------------------------------------------------------
                     VIEWFINDER OVERLAY: STEP 1 (QR SCANNER)
@@ -2240,11 +2343,15 @@ export const MobileApp: React.FC = () => {
                   onClick={() => {
                     const payload = org?.masterQrPayload || 'QR-ATTEND-V1:DRP-HQ-01:VALID';
                     playAudioFeedback('STEP');
+                    const now = Date.now();
+                    qrScannedTimestampRef.current = now;
+                    setQrScannedTimestamp(now);
+                    setQrTimerSeconds(90);
                     scannedQrPayloadRef.current = payload;
                     setScannedQrPayload(payload);
                     setIsQrVerified(true);
                     setQrScanFeedback('✅ Office Master QR Verified! Aligning face...');
-                    showToast('✅ Office Master QR Verified! Now align your face.');
+                    showToast('✅ Office Master QR Verified! 90s Face Scan window started.');
                     attendanceStepRef.current = 'FACE_SCAN';
                     setAttendanceStep('FACE_SCAN');
                     if (facingMode === 'environment') {
@@ -2271,25 +2378,49 @@ export const MobileApp: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <button
-                onClick={() =>
-                  detectedFace && handleTriggerAttendanceVerification(detectedFace, scannedQrPayloadRef.current)
-                }
-                disabled={!detectedFace?.hasFace || isProcessing}
-                className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2"
-              >
-                {isProcessing ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    Verifying Attendance Multi-Factor...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4" />
-                    {isFaceMatch ? 'Auto-Verifying Face...' : 'Mark Attendance Now'}
-                  </>
-                )}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    scannedQrPayloadRef.current = null;
+                    setScannedQrPayload(null);
+                    setIsQrVerified(false);
+                    qrScannedTimestampRef.current = null;
+                    setQrScannedTimestamp(null);
+                    attendanceStepRef.current = 'QR_SCAN';
+                    setAttendanceStep('QR_SCAN');
+                    setQrTimerSeconds(90);
+                    setQrScanFeedback('Point camera at the Office Master QR poster on the wall');
+                    if (facingMode === 'user') {
+                      setFacingMode('environment');
+                    }
+                  }}
+                  className="px-3.5 py-3.5 rounded-2xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition active:scale-95"
+                  title="Cancel and Re-scan QR"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                  Re-scan QR
+                </button>
+                <button
+                  onClick={() =>
+                    detectedFace && handleTriggerAttendanceVerification(detectedFace, scannedQrPayloadRef.current)
+                  }
+                  disabled={!detectedFace?.hasFace || isProcessing}
+                  className="flex-1 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2"
+                >
+                  {isProcessing ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Verifying Attendance Multi-Factor...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      {isFaceMatch ? 'Auto-Verifying Face...' : 'Mark Attendance Now'}
+                    </>
+                  )}
+                </button>
+              </div>
             )}
           </div>
         </div>
