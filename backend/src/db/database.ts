@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { config } from '../config/env.js';
+import { supabaseDb } from './supabaseDb.js';
 
 export interface Organization {
   id: string;
@@ -141,6 +142,7 @@ class DatabaseManager {
       this.data.organizations.push(org);
     }
     this.save();
+    supabaseDb.upsertOrganization(org).catch((e) => console.warn('Supabase sync org error:', e));
     return org;
   }
 
@@ -167,6 +169,7 @@ class DatabaseManager {
   createEmployee(employee: Employee): Employee {
     this.data.employees.push(employee);
     this.save();
+    supabaseDb.upsertEmployee(employee).catch((e) => console.warn('Supabase sync employee error:', e));
     return employee;
   }
 
@@ -179,6 +182,7 @@ class DatabaseManager {
         updatedAt: new Date().toISOString(),
       };
       this.save();
+      supabaseDb.upsertEmployee(this.data.employees[idx]).catch((e) => console.warn('Supabase sync employee error:', e));
       return this.data.employees[idx];
     }
     return undefined;
@@ -233,6 +237,7 @@ class DatabaseManager {
   createAttendanceLog(log: AttendanceLog): AttendanceLog {
     this.data.attendance_logs.push(log);
     this.save();
+    supabaseDb.createAttendanceLog(log).catch((e) => console.warn('Supabase sync log error:', e));
     return log;
   }
 
@@ -244,6 +249,7 @@ class DatabaseManager {
   createAdmin(admin: AdminUser): AdminUser {
     this.data.admin_users.push(admin);
     this.save();
+    supabaseDb.upsertAdmin(admin).catch((e) => console.warn('Supabase sync admin error:', e));
     return admin;
   }
 

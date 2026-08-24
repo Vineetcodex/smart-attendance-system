@@ -12,4 +12,7 @@ export const config = {
   faceSimilarityThreshold: parseFloat(process.env.FACE_THRESHOLD || '0.85'), // 85% match
   uploadsDir: path.join(process.cwd(), 'uploads'),
   dataDir: path.join(process.cwd(), 'data'),
+  supabaseUrl: process.env.SUPABASE_URL || 'https://tbwljslhmcgrxfbzddjg.supabase.co',
+  supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_1F37cUkr71KYkpdkWpM2Ig_DRajz0P-',
+  supabaseSecretKey: process.env.SUPABASE_SECRET_KEY || '',
 };
