@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { validateAndNormalizeEmployeeCode } from '../utils/codeValidator.js';
 
 // Known network IPs for local dev auto-discovery
 const CANDIDATE_BACKEND_URLS = [
@@ -309,7 +310,8 @@ export const api = {
       console.warn('Backend server unavailable or network error. Saving employee directly to local mobile database...', err);
       const localEmployees: any[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
 
-      const code = (data.employeeCode || `EMP-${Math.floor(1000 + Math.random() * 9000)}`).toUpperCase().trim();
+      const codeValidation = validateAndNormalizeEmployeeCode(data.employeeCode || '');
+      const code = codeValidation.isValid ? codeValidation.normalizedCode : (data.employeeCode || 'DRP01').toUpperCase().trim();
 
       const newEmp: Employee = {
         id: 'emp_local_' + Date.now(),

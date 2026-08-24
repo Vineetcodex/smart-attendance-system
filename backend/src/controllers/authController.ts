@@ -147,8 +147,16 @@ export class AuthController {
         return res.status(400).json({ success: false, message: 'Full name, email, and password are required.' });
       }
 
-      // Auto-generate code if not provided
-      const code = (employeeCode || `EMP-${Math.floor(1000 + Math.random() * 9000)}`).toUpperCase().trim();
+      // Enforce Employee ID range: DRP01 to DRP10
+      const { validateAndNormalizeEmployeeCode } = await import('../utils/codeValidator.js');
+      const codeValidation = validateAndNormalizeEmployeeCode(employeeCode);
+      if (!codeValidation.isValid) {
+        return res.status(400).json({
+          success: false,
+          message: codeValidation.error || 'Employee ID must be between DRP01 and DRP10 (e.g. DRP01, DRP02, ... DRP10).',
+        });
+      }
+      const code = codeValidation.normalizedCode;
 
       const org = db.getPrimaryOrganization();
       const orgId = org?.id || 'org_drp_tech_hq';

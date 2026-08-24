@@ -66,9 +66,20 @@ export class EmployeeController {
         return res.status(400).json({ success: false, message: 'Employee code, full name, and email are required.' });
       }
 
-      const existingCode = db.getEmployeeByCode(employeeCode);
+      // Enforce Employee ID range: DRP01 to DRP10
+      const { validateAndNormalizeEmployeeCode } = await import('../utils/codeValidator.js');
+      const codeValidation = validateAndNormalizeEmployeeCode(employeeCode);
+      if (!codeValidation.isValid) {
+        return res.status(400).json({
+          success: false,
+          message: codeValidation.error || 'Employee ID must be between DRP01 and DRP10 (e.g. DRP01, DRP02, ... DRP10).',
+        });
+      }
+      const normalizedCode = codeValidation.normalizedCode;
+
+      const existingCode = db.getEmployeeByCode(normalizedCode);
       if (existingCode) {
-        return res.status(400).json({ success: false, message: `Employee code ${employeeCode} already in use.` });
+        return res.status(400).json({ success: false, message: `Employee code ${normalizedCode} already in use.` });
       }
 
       const existingEmail = db.getEmployeeByEmail(email);
@@ -86,7 +97,7 @@ export class EmployeeController {
       const embedding =
         faceEmbedding && Array.isArray(faceEmbedding) && faceEmbedding.length > 0
           ? FaceService.normalizeVector(faceEmbedding)
-          : FaceService.generateEmbeddingFromSeed(`${employeeCode}-${fullName}`);
+          : FaceService.generateEmbeddingFromSeed(`${normalizedCode}-${fullName}`);
 
       // Malpractice / Duplicate Biometric Check: Prevent duplicate enrollment of same face
       const existingEmployees = db.getEmployees(orgId);
@@ -108,7 +119,7 @@ export class EmployeeController {
       const newEmployee: Employee = {
         id: uuidv4(),
         orgId,
-        employeeCode: employeeCode.toUpperCase().trim(),
+        employeeCode: normalizedCode,
         fullName: fullName.trim(),
         email: email.toLowerCase().trim(),
         phone: phone || '',

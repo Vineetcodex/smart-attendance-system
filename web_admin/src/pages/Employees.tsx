@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { api, Employee } from '../services/api.js';
 import { WebcamModal } from '../components/WebcamModal.js';
+import { validateAndNormalizeEmployeeCode } from '../utils/codeValidator.js';
 
 export const Employees: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -58,9 +59,17 @@ export const Employees: React.FC = () => {
     e.preventDefault();
     setSaving(true);
     try {
+      const codeValidation = validateAndNormalizeEmployeeCode(employeeCode);
+      if (!codeValidation.isValid) {
+        alert(codeValidation.error || 'Employee ID must be between DRP01 and DRP10 (e.g. DRP01, DRP02, ... DRP10).');
+        setSaving(false);
+        return;
+      }
+      const normalizedCode = codeValidation.normalizedCode;
+
       await api.createEmployee({
         fullName,
-        employeeCode,
+        employeeCode: normalizedCode,
         email,
         department,
         position,
@@ -293,13 +302,15 @@ export const Employees: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-300 font-medium mb-1">Employee Code</label>
+                  <label className="block text-slate-300 font-medium mb-1">
+                    Employee Code <span className="text-emerald-400 font-mono">(DRP01 - DRP10)</span>
+                  </label>
                   <input
                     type="text"
                     required
                     value={employeeCode}
                     onChange={(e) => setEmployeeCode(e.target.value)}
-                    placeholder="EMP-1006"
+                    placeholder="e.g. DRP01 or DRP 01"
                     className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white font-mono focus:outline-none focus:border-emerald-500 text-xs"
                   />
                 </div>

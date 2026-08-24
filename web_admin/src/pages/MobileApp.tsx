@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { api, Employee, Organization, AttendanceLog, setApiBase, getApiBase } from '../services/api.js';
 import { StatusBadge } from '../components/StatusBadge.js';
+import { validateAndNormalizeEmployeeCode } from '../utils/codeValidator.js';
 import {
   detectRealFace,
   loadFaceDetectionModels,
@@ -281,8 +282,9 @@ export const MobileApp: React.FC = () => {
   ];
 
   const handleGenerateCodeSuggestion = () => {
-    const randomNum = Math.floor(1000 + Math.random() * 9000);
-    setSignupCode(`EMP-${randomNum}`);
+    const randomNum = Math.floor(1 + Math.random() * 10);
+    const formatted = randomNum < 10 ? `0${randomNum}` : `${randomNum}`;
+    setSignupCode(`DRP${formatted}`);
   };
 
   // Load Models on Mount
@@ -753,10 +755,12 @@ export const MobileApp: React.FC = () => {
 
   // Quick 1-tap demo auto fill for instant testing
   const handleQuickDemoFill = () => {
-    const randomNum = Math.floor(1000 + Math.random() * 9000);
-    setSignupFullName('Test Employee');
-    setSignupCode(`DRP-${randomNum}`);
-    setSignupEmail(`employee${randomNum}@drptech.com`);
+    const randomNum = Math.floor(1 + Math.random() * 10);
+    const formatted = randomNum < 10 ? `0${randomNum}` : `${randomNum}`;
+    const code = `DRP${formatted}`;
+    setSignupFullName(`Staff Member ${formatted}`);
+    setSignupCode(code);
+    setSignupEmail(`staff${formatted.toLowerCase()}@drptech.com`);
     setSignupPassword('pass1234');
     setSignupDept('Engineering');
     setSignupPosition('Software Engineer');
@@ -764,11 +768,11 @@ export const MobileApp: React.FC = () => {
     // Seed valid 512-D vector
     const dummyVector = new Array(512).fill(0).map(() => (Math.random() - 0.5) * 0.1);
     setCapturedPoses({
-      straight: { embedding: dummyVector, photoUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=Emp${randomNum}` },
-      left: { embedding: dummyVector, photoUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=Emp${randomNum}` },
-      right: { embedding: dummyVector, photoUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=Emp${randomNum}` },
+      straight: { embedding: dummyVector, photoUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${code}` },
+      left: { embedding: dummyVector, photoUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${code}` },
+      right: { embedding: dummyVector, photoUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${code}` },
     });
-    showToast('⚡ Sample employee profile auto-filled!');
+    showToast(`⚡ Sample profile auto-filled with ${code}!`);
   };
 
   // -------------------------------------------------------------
@@ -783,7 +787,12 @@ export const MobileApp: React.FC = () => {
       return;
     }
     if (!signupCode.trim()) {
-      setSignupError('Please choose your Employee ID (e.g. EMP-1001).');
+      setSignupError('Please choose your Employee ID (DRP01 to DRP10).');
+      return;
+    }
+    const codeValidation = validateAndNormalizeEmployeeCode(signupCode);
+    if (!codeValidation.isValid) {
+      setSignupError(codeValidation.error || 'Employee ID must be between DRP01 and DRP10 (e.g. DRP01, DRP02, ... DRP10).');
       return;
     }
     if (!signupEmail.trim()) {
@@ -798,7 +807,7 @@ export const MobileApp: React.FC = () => {
     setIsSigningUp(true);
 
     try {
-      const chosenCode = signupCode.trim().toUpperCase();
+      const chosenCode = codeValidation.normalizedCode;
 
       // Collect multi-pose embeddings or generate fallback baseline
       const fallbackVector = new Array(512).fill(0).map(() => (Math.random() - 0.5) * 0.1);
@@ -1408,26 +1417,31 @@ export const MobileApp: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Employee ID with Suggestions */}
+                {/* Employee ID with Suggestions (Restricted to DRP01 - DRP10) */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-slate-300">Employee ID</label>
+                    <label className="text-xs font-medium text-slate-300">
+                      Employee ID <span className="text-emerald-400 font-mono text-[11px]">(DRP01 - DRP10)</span>
+                    </label>
                     <button
                       type="button"
                       onClick={handleGenerateCodeSuggestion}
                       className="text-[11px] text-emerald-400 hover:underline flex items-center gap-1"
                     >
-                      <Shuffle className="w-3 h-3" /> Auto-generate
+                      <Shuffle className="w-3 h-3" /> Auto-suggest ID
                     </button>
                   </div>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. EMP-1082"
+                    placeholder="e.g. DRP01 or DRP 01 (DRP01 to DRP10)"
                     value={signupCode}
                     onChange={(e) => setSignupCode(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs font-mono uppercase focus:outline-none focus:border-emerald-500"
                   />
+                  <p className="text-[10px] text-slate-500">
+                    Allowed IDs: <span className="text-slate-400 font-mono">DRP01 to DRP10</span> (e.g. <span className="text-slate-400">"DRP02"</span> or <span className="text-slate-400">"DRP 02"</span>)
+                  </p>
                 </div>
 
                 {/* Email & Password */}
