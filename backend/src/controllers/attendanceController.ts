@@ -189,8 +189,8 @@ export class AttendanceController {
         Boolean(isMockLocation)
       );
 
-      // Determine Overall Outcome: QR (if scanned) AND Face match AND Anti-Spoofing Liveness must pass
-      const isBiometricPass = isQrValid && faceResult.isMatch && isLivenessValid;
+      // Determine Overall Outcome: QR (if scanned) AND Face match AND Anti-Spoofing Liveness AND Geofence Perimeter must pass
+      const isBiometricPass = isQrValid && faceResult.isMatch && isLivenessValid && geoResult.isInside;
 
       // -------------------------------------------------------------
       // DUAL PUNCH LOGIC: CHECK-IN (ENTRY) VS CHECK-OUT (EXIT)
@@ -295,11 +295,15 @@ export class AttendanceController {
       broadcastAttendanceEvent(log);
 
       if (!isBiometricPass) {
+        const primaryMessage = !geoResult.isInside
+          ? (geoResult.error || `Outside Office Perimeter: You are ${geoResult.distanceMeters.toFixed(0)}m away.`)
+          : (!isQrValid ? qrError : (!faceResult.isMatch ? (faceResult.error || 'Biometric face mismatch.') : livenessError));
+
         return res.status(422).json({
           success: false,
           status: 'REJECTED',
           punchType,
-          message: 'Biometric face verification failed.',
+          message: primaryMessage || 'Biometric verification failed.',
           details: {
             facePassed: faceResult.isMatch,
             faceSimilarityScore: faceResult.similarityScore,

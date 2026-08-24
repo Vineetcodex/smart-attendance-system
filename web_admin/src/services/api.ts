@@ -572,7 +572,29 @@ export const api = {
         bestMatch = { isMatch: matched, similarity: maxS, distance: minD };
       }
 
-      const isBiometricPass = isQrTimeValid && bestMatch.isMatch && (payload.antiSpoofPassed !== false);
+      // Optional geofence check in local standalone mode
+      const orgRaw = localStorage.getItem('local_org_settings');
+      const orgData = orgRaw ? JSON.parse(orgRaw) : null;
+      let isGeoPass = true;
+      let calculatedDistance = 2.5;
+
+      if (orgData && orgData.latitude && orgData.longitude && payload.latitude && payload.longitude) {
+        const toRad = (deg: number) => (deg * Math.PI) / 180;
+        const R = 6371000;
+        const dLat = toRad(orgData.latitude - payload.latitude);
+        const dLon = toRad(orgData.longitude - payload.longitude);
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(toRad(payload.latitude)) * Math.cos(toRad(orgData.latitude)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        calculatedDistance = Math.round(R * c);
+        const radius = orgData.geofenceRadiusMeters || 50;
+        if (calculatedDistance > radius) {
+          isGeoPass = false;
+        }
+      }
+
+      const isBiometricPass = isQrTimeValid && bestMatch.isMatch && (payload.antiSpoofPassed !== false) && isGeoPass;
 
       const logs: AttendanceLog[] = JSON.parse(localStorage.getItem('local_attendance_logs') || '[]');
       const now = payload.capturedAt ? new Date(payload.capturedAt) : new Date();
@@ -637,7 +659,7 @@ export const api = {
         antiSpoofVerdict: payload.antiSpoofVerdict || 'GENUINE_LIVE',
         latitude: payload.latitude,
         longitude: payload.longitude,
-        distanceMeters: 2.5,
+        distanceMeters: calculatedDistance,
         isMockLocation: Boolean(payload.isMockLocation),
         snapshotUrl: payload.snapshotUrl || emp.photoUrl,
         verificationMethod: payload.qrPayload ? 'DUAL_QR_FACE' : 'FACIAL_BIOMETRIC',

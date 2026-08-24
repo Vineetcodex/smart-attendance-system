@@ -27,6 +27,7 @@ import {
   Timer,
   RotateCcw,
   Building2,
+  MapPinOff,
 } from 'lucide-react';
 import { api, Employee, Organization, AttendanceLog, setApiBase, getApiBase } from '../services/api.js';
 import { StatusBadge } from '../components/StatusBadge.js';
@@ -41,6 +42,19 @@ import {
   FiveLandmarks,
 } from '../services/faceDetectionService.js';
 import { scanQrFromVideo, validateMasterQr } from '../services/qrScannerService.js';
+
+// Haversine distance calculator in meters
+const calculateHaversineDistanceMeters = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const R = 6371000; // Earth radius in meters
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c);
+};
 
 // Sound synthesizer using Web Audio API for interactive biometric feedback
 const playAudioFeedback = (type: 'STEP' | 'SUCCESS' | 'SHUTTER' | 'ALERT') => {
@@ -235,6 +249,18 @@ export const MobileApp: React.FC = () => {
     connected: false,
     testing: false,
     message: 'Checking...',
+  });
+
+  // Out of Office Geofence Perimeter Warning Modal
+  const [outOfPerimeterModal, setOutOfPerimeterModal] = useState<{
+    isOpen: boolean;
+    distanceMeters: number;
+    allowedRadiusMeters: number;
+    officeName?: string;
+  }>({
+    isOpen: false,
+    distanceMeters: 0,
+    allowedRadiusMeters: 50,
   });
 
   const showToast = (msg: string) => {
@@ -594,6 +620,44 @@ export const MobileApp: React.FC = () => {
           if (qrResult && qrResult.data) {
             const validation = validateMasterQr(qrResult.data, org);
             if (validation.isValid) {
+              // Real-time Office Geofence Perimeter Verification
+              if (org && org.latitude && org.longitude && org.geofenceRadiusMeters) {
+                if (navigator.geolocation) {
+                  try {
+                    const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+                      navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        timeout: 3000,
+                        enableHighAccuracy: true,
+                      });
+                    });
+
+                    const distance = calculateHaversineDistanceMeters(
+                      pos.coords.latitude,
+                      pos.coords.longitude,
+                      org.latitude,
+                      org.longitude
+                    );
+
+                    if (distance > org.geofenceRadiusMeters) {
+                      // ❌ OUT OF PERIMETER! Block attendance immediately and pop up alert
+                      playAudioFeedback('ALERT');
+                      stopCamera();
+                      setIsAttendanceCameraActive(false);
+                      setOutOfPerimeterModal({
+                        isOpen: true,
+                        distanceMeters: distance,
+                        allowedRadiusMeters: org.geofenceRadiusMeters,
+                        officeName: org.name,
+                      });
+                      showToast(`📍 Out of Office Location (${distance >= 1000 ? (distance / 1000).toFixed(1) + ' km' : distance + ' m'} away)!`);
+                      return;
+                    }
+                  } catch (geoErr) {
+                    console.warn('Geolocation check bypassed/unavailable:', geoErr);
+                  }
+                }
+              }
+
               playAudioFeedback('STEP');
               const now = Date.now();
               qrScannedTimestampRef.current = now;
@@ -1023,12 +1087,37 @@ export const MobileApp: React.FC = () => {
         playAudioFeedback('ALERT');
         const reason = res.details?.failureReason || res.message || 'Face mismatch with registered profile.';
         showToast(`❌ Attendance Rejected: ${reason}`);
+
+        if (
+          res.details?.geofencePassed === false ||
+          (res.details?.distanceMeters && org?.geofenceRadiusMeters && res.details.distanceMeters > org.geofenceRadiusMeters)
+        ) {
+          setOutOfPerimeterModal({
+            isOpen: true,
+            distanceMeters: res.details?.distanceMeters || 0,
+            allowedRadiusMeters: org?.geofenceRadiusMeters || 50,
+            officeName: org?.name,
+          });
+        }
       }
     } catch (err: any) {
       playAudioFeedback('ALERT');
       const errData = err.response?.data;
       setVerifyResult(errData || { success: false, message: err.message });
-      showToast('❌ Attendance Verification Failed');
+      const reason = errData?.details?.failureReason || errData?.message || err.message || 'Verification failed.';
+      showToast(`❌ Attendance Failed: ${reason}`);
+
+      if (
+        errData?.details?.geofencePassed === false ||
+        (errData?.details?.distanceMeters && org?.geofenceRadiusMeters && errData.details.distanceMeters > org.geofenceRadiusMeters)
+      ) {
+        setOutOfPerimeterModal({
+          isOpen: true,
+          distanceMeters: errData?.details?.distanceMeters || 0,
+          allowedRadiusMeters: org?.geofenceRadiusMeters || 50,
+          officeName: org?.name,
+        });
+      }
     } finally {
       setIsProcessing(false);
       setIsAttendanceCameraActive(false);
@@ -2635,6 +2724,78 @@ export const MobileApp: React.FC = () => {
               className="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs transition"
             >
               Done
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          MODAL 4: OUT OF OFFICE GEOFENCE PERIMETER ALERT POPUP
+         ========================================================================= */}
+      {outOfPerimeterModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+          <div className="w-full max-w-sm bg-slate-900 border-2 border-rose-500/50 rounded-3xl p-6 shadow-2xl shadow-rose-950/50 space-y-4 text-center relative overflow-hidden">
+            {/* Ambient Background Glow */}
+            <div className="absolute -top-16 -left-16 w-32 h-32 bg-rose-500/20 rounded-full blur-2xl pointer-events-none" />
+            <div className="absolute -bottom-16 -right-16 w-32 h-32 bg-rose-500/20 rounded-full blur-2xl pointer-events-none" />
+
+            {/* Glowing Icon */}
+            <div className="w-16 h-16 rounded-3xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center mx-auto shadow-lg shadow-rose-500/20 text-rose-400">
+              <MapPinOff className="w-8 h-8 animate-pulse text-rose-400" />
+            </div>
+
+            {/* Header Title */}
+            <div className="space-y-1">
+              <h3 className="text-lg font-extrabold text-white tracking-tight">
+                Out of Office Location
+              </h3>
+              <p className="text-xs text-rose-300 font-semibold flex items-center justify-center gap-1">
+                <span>🚫 Attendance Blocked • Geofence Restriction</span>
+              </p>
+            </div>
+
+            {/* Main Explanation */}
+            <div className="p-3.5 bg-rose-950/40 rounded-2xl border border-rose-500/30 text-left space-y-2 text-xs">
+              <p className="text-slate-200 leading-relaxed">
+                You are currently{' '}
+                <span className="text-rose-400 font-bold font-mono text-sm">
+                  {outOfPerimeterModal.distanceMeters >= 1000
+                    ? (outOfPerimeterModal.distanceMeters / 1000).toFixed(2) + ' km'
+                    : outOfPerimeterModal.distanceMeters.toFixed(0) + ' m'}
+                </span>{' '}
+                away from the registered office coordinates.
+              </p>
+              <p className="text-slate-400 text-[11px] leading-relaxed">
+                You must be physically present inside the office premises (within{' '}
+                <span className="text-emerald-400 font-bold">{outOfPerimeterModal.allowedRadiusMeters} meters</span>) to scan the Master QR code and mark attendance.
+              </p>
+            </div>
+
+            {/* Real-time Distance Diagnostics */}
+            <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+              <div className="p-2.5 rounded-xl bg-slate-950/90 border border-slate-800 text-left">
+                <span className="text-slate-500 block text-[9px] font-sans">CURRENT DISTANCE</span>
+                <span className="text-rose-400 font-bold text-xs">
+                  {outOfPerimeterModal.distanceMeters >= 1000
+                    ? (outOfPerimeterModal.distanceMeters / 1000).toFixed(2) + ' km'
+                    : outOfPerimeterModal.distanceMeters.toFixed(0) + ' m'}
+                </span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-slate-950/90 border border-slate-800 text-left">
+                <span className="text-slate-500 block text-[9px] font-sans">ALLOWED RADIUS</span>
+                <span className="text-emerald-400 font-bold text-xs">
+                  {outOfPerimeterModal.allowedRadiusMeters} meters
+                </span>
+              </div>
+            </div>
+
+            {/* Dismiss Button */}
+            <button
+              type="button"
+              onClick={() => setOutOfPerimeterModal((prev) => ({ ...prev, isOpen: false }))}
+              className="w-full py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-600/30 transition active:scale-95 flex items-center justify-center gap-1.5"
+            >
+              Understood (Close)
             </button>
           </div>
         </div>
