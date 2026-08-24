@@ -1349,6 +1349,13 @@ export const MobileApp: React.FC = () => {
               <div className="grid grid-cols-2 gap-1.5 text-[10px]">
                 <button
                   type="button"
+                  onClick={() => setCustomServerUrl('https://smart-attendance-system-sdnf.onrender.com/api/v1')}
+                  className="col-span-2 px-2 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 truncate font-semibold text-center"
+                >
+                  ☁️ 24/7 Render Cloud (Global 5G/4G)
+                </button>
+                <button
+                  type="button"
                   onClick={() => setCustomServerUrl('http://192.168.29.93:5000/api/v1')}
                   className="px-2 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/60 truncate"
                 >

@@ -1,8 +1,9 @@
 import axios from 'axios';
 import { validateAndNormalizeEmployeeCode } from '../utils/codeValidator.js';
 
-// Known network IPs for local dev auto-discovery
+// Known network IPs & Cloud URLs for auto-discovery
 const CANDIDATE_BACKEND_URLS = [
+  'https://smart-attendance-system-sdnf.onrender.com/api/v1',
   'http://192.168.29.93:5000/api/v1',
   'http://localhost:5000/api/v1',
   'http://10.0.2.2:5000/api/v1',
@@ -28,8 +29,8 @@ export const getApiBase = (): string => {
       (window.location.protocol === 'https:' && (host === 'localhost' || !host));
 
     if (isCapacitor) {
-      // Default to Wi-Fi host IP for direct APK connectivity
-      return 'http://192.168.29.93:5000/api/v1';
+      // Default to 24/7 Global Cloud Backend on Render (works on 5G/4G mobile data & any Wi-Fi)
+      return 'https://smart-attendance-system-sdnf.onrender.com/api/v1';
     }
 
     if (host && host !== 'localhost' && host !== '127.0.0.1') {
@@ -37,7 +38,7 @@ export const getApiBase = (): string => {
     }
   }
 
-  return '/api/v1';
+  return 'https://smart-attendance-system-sdnf.onrender.com/api/v1';
 };
 
 export const setApiBase = (url: string) => {
