@@ -86,29 +86,29 @@ export const OrgSettings: React.FC<Props> = ({ org, onOrgUpdated }) => {
   };
 
   return (
-    <div className="p-8 space-y-8 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 max-w-7xl mx-auto w-full">
       <div>
-        <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2.5">
-          <QrCode className="w-6 h-6 text-emerald-400" />
+        <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2.5">
+          <QrCode className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-400 shrink-0" />
           Organization Geofence & Master QR Studio
         </h2>
-        <p className="text-slate-400 text-sm mt-1">
+        <p className="text-slate-400 text-xs sm:text-sm mt-1">
           Configure the physical office boundaries and export the encrypted Master QR Code for wall mounting.
         </p>
       </div>
 
       {successMsg && (
-        <div className="p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-sm flex items-center gap-2 shadow-lg">
+        <div className="p-3.5 sm:p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs sm:text-sm flex items-center gap-2 shadow-lg">
           <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-          {successMsg}
+          <span>{successMsg}</span>
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Left Column: Form & Geofence (7 cols) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8">
+        {/* Left Column: Form & Geofence (6 cols) */}
         <div className="lg:col-span-6 space-y-6">
-          <form onSubmit={handleSaveSettings} className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-5">
-            <h3 className="text-base font-semibold text-white flex items-center gap-2 pb-3 border-b border-slate-800">
+          <form onSubmit={handleSaveSettings} className="glass-panel p-4 sm:p-6 rounded-2xl border border-slate-800 space-y-4 sm:space-y-5">
+            <h3 className="text-sm sm:text-base font-semibold text-white flex items-center gap-2 pb-3 border-b border-slate-800">
               <Building className="w-4 h-4 text-emerald-400" />
               Office Premises Configuration
             </h3>
@@ -122,7 +122,7 @@ export const OrgSettings: React.FC<Props> = ({ org, onOrgUpdated }) => {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:border-emerald-500"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs sm:text-sm focus:outline-none focus:border-emerald-500"
                 required
               />
             </div>
@@ -136,29 +136,29 @@ export const OrgSettings: React.FC<Props> = ({ org, onOrgUpdated }) => {
                 type="text"
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:border-emerald-500"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs sm:text-sm focus:outline-none focus:border-emerald-500"
                 placeholder="e.g. 500 Tech Boulevard, San Francisco, CA"
               />
             </div>
 
             {/* GPS Coordinates */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                  <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                   Office GPS Coordinates (WGS84)
                 </label>
                 <button
                   type="button"
                   onClick={handleUseCurrentLocation}
-                  className="text-xs text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-1 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20"
+                  className="text-xs text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-1 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 self-start sm:self-auto"
                 >
                   <LocateFixed className="w-3 h-3" />
                   Use My Current GPS
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <span className="text-[11px] text-slate-400">Latitude</span>
                   <input
@@ -166,7 +166,7 @@ export const OrgSettings: React.FC<Props> = ({ org, onOrgUpdated }) => {
                     step="any"
                     value={latitude}
                     onChange={(e) => setLatitude(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm font-mono focus:outline-none focus:border-emerald-500"
+                    className="w-full px-3.5 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs sm:text-sm font-mono focus:outline-none focus:border-emerald-500"
                     required
                   />
                 </div>
@@ -177,7 +177,7 @@ export const OrgSettings: React.FC<Props> = ({ org, onOrgUpdated }) => {
                     step="any"
                     value={longitude}
                     onChange={(e) => setLongitude(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm font-mono focus:outline-none focus:border-emerald-500"
+                    className="w-full px-3.5 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs sm:text-sm font-mono focus:outline-none focus:border-emerald-500"
                     required
                   />
                 </div>
@@ -209,11 +209,11 @@ export const OrgSettings: React.FC<Props> = ({ org, onOrgUpdated }) => {
             </div>
 
             {/* Save Button */}
-            <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
+            <div className="pt-3 border-t border-slate-800 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3">
               <button
                 type="button"
                 onClick={handleRegenerateQr}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 transition"
+                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 transition w-full sm:w-auto"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 Regenerate Token
@@ -222,7 +222,7 @@ export const OrgSettings: React.FC<Props> = ({ org, onOrgUpdated }) => {
               <button
                 type="submit"
                 disabled={saving}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white shadow-md shadow-emerald-600/20 transition"
+                className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white shadow-md shadow-emerald-600/20 transition w-full sm:w-auto"
               >
                 <Save className="w-4 h-4" />
                 {saving ? 'Saving...' : 'Save & Update Master QR'}
@@ -233,10 +233,10 @@ export const OrgSettings: React.FC<Props> = ({ org, onOrgUpdated }) => {
           {/* Cryptographic Info Box */}
           <div className="glass-card p-4 rounded-xl border border-slate-800 space-y-2 text-xs text-slate-400">
             <div className="flex items-center gap-2 text-slate-200 font-semibold">
-              <Info className="w-4 h-4 text-cyan-400" />
+              <Info className="w-4 h-4 text-cyan-400 shrink-0" />
               Cryptographic Anti-Tampering Engine
             </div>
-            <p className="leading-relaxed">
+            <p className="leading-relaxed text-[11px] sm:text-xs">
               The Master QR incorporates an <strong>AES-256-GCM cipher</strong> with a unique branch salt. Even if a QR code is photographed, verification will be rejected unless the employee’s smartphone is physically inside the designated {radius}m GPS radius.
             </p>
             <div className="p-2 bg-slate-950 rounded font-mono text-[10px] text-slate-400 truncate">

@@ -53,22 +53,22 @@ export const Reports: React.FC = () => {
   );
 
   return (
-    <div className="p-8 space-y-8 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 max-w-7xl mx-auto w-full">
       {/* Header & Export Action */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2.5">
-            <FileSpreadsheet className="w-6 h-6 text-emerald-400" />
+          <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2.5">
+            <FileSpreadsheet className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-400 shrink-0" />
             Attendance Audit Logs & Reports
           </h2>
-          <p className="text-slate-400 text-sm mt-1">
+          <p className="text-slate-400 text-xs sm:text-sm mt-1">
             Historical attendance records with multi-factor confidence scores, entry/exit tracking, and CSV export.
           </p>
         </div>
 
         <button
           onClick={handleExportCsv}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-600/20 transition self-start"
+          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-600/20 transition w-full sm:w-auto self-stretch sm:self-auto"
         >
           <Download className="w-4 h-4" />
           Export Spreadsheet (CSV)
@@ -76,8 +76,8 @@ export const Reports: React.FC = () => {
       </div>
 
       {/* Filter Control Bar */}
-      <div className="glass-panel p-5 rounded-2xl border border-slate-800 space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+      <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 text-xs">
           {/* Search */}
           <div>
             <label className="block text-slate-400 font-medium mb-1">Search Employee</label>
@@ -88,7 +88,7 @@ export const Reports: React.FC = () => {
                 placeholder="Name or Code..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white focus:outline-none focus:border-emerald-500"
+                className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white focus:outline-none focus:border-emerald-500 text-xs"
               />
             </div>
           </div>
@@ -99,7 +99,7 @@ export const Reports: React.FC = () => {
             <select
               value={deptFilter}
               onChange={(e) => setDeptFilter(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white focus:outline-none focus:border-emerald-500"
+              className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white focus:outline-none focus:border-emerald-500 text-xs"
             >
               {departments.map((d) => (
                 <option key={d} value={d}>
@@ -115,7 +115,7 @@ export const Reports: React.FC = () => {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white focus:outline-none focus:border-emerald-500"
+              className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white focus:outline-none focus:border-emerald-500 text-xs"
             >
               <option value="ALL">All Statuses</option>
               <option value="PRESENT">Present (Entry)</option>
@@ -144,7 +144,7 @@ export const Reports: React.FC = () => {
       <div className="glass-panel rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
         <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/40 text-xs">
           <span className="text-slate-400">
-            Showing <strong className="text-white">{filteredLogs.length}</strong> attendance records
+            Showing <strong className="text-white">{filteredLogs.length}</strong> records
           </span>
           {startDate && (
             <button
@@ -165,7 +165,7 @@ export const Reports: React.FC = () => {
           <div className="p-12 text-center text-slate-400 text-sm">No attendance records found.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full text-left text-sm min-w-[800px]">
               <thead className="bg-slate-950/60 text-slate-400 text-xs font-medium uppercase tracking-wider border-b border-slate-800">
                 <tr>
                   <th className="py-3 px-4">Date & Time</th>

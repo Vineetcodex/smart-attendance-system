@@ -119,15 +119,15 @@ export const Employees: React.FC = () => {
   );
 
   return (
-    <div className="p-8 space-y-8 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 max-w-7xl mx-auto w-full">
       {/* Header & Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2.5">
-            <Users className="w-6 h-6 text-emerald-400" />
+          <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2.5">
+            <Users className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-400 shrink-0" />
             Employee Directory & Facial Enrollment
           </h2>
-          <p className="text-slate-400 text-sm mt-1">
+          <p className="text-slate-400 text-xs sm:text-sm mt-1">
             Manage employee credentials and register baseline facial embeddings for touchless verification.
           </p>
         </div>
@@ -138,7 +138,7 @@ export const Employees: React.FC = () => {
             setEmployeeCode(`EMP-${Math.floor(1000 + Math.random() * 9000)}`);
             setIsAddModalOpen(true);
           }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-600/20 transition self-start"
+          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-600/20 transition w-full sm:w-auto self-stretch sm:self-auto"
         >
           <UserPlus className="w-4 h-4" />
           Onboard New Employee
@@ -147,7 +147,7 @@ export const Employees: React.FC = () => {
 
       {/* Filters Bar */}
       <div className="glass-panel p-4 rounded-2xl border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
+        <div className="relative flex-1 max-w-md w-full">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
@@ -159,7 +159,7 @@ export const Employees: React.FC = () => {
         </div>
 
         {/* Department Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 w-full md:w-auto">
           {departments.map((dept) => (
             <button
               key={dept}
@@ -184,7 +184,7 @@ export const Employees: React.FC = () => {
           No employees found matching your filter criteria.
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {filteredEmployees.map((emp) => (
             <div
               key={emp.id}
@@ -246,10 +246,10 @@ export const Employees: React.FC = () => {
 
       {/* Onboard Employee Modal */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl my-8">
-            <div className="flex items-center justify-between p-5 border-b border-slate-800">
-              <h3 className="font-semibold text-white text-base flex items-center gap-2">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl my-6 max-h-[92vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-800 shrink-0">
+              <h3 className="font-semibold text-white text-sm sm:text-base flex items-center gap-2">
                 <UserPlus className="w-5 h-5 text-emerald-400" />
                 Register New Employee
               </h3>
@@ -261,9 +261,9 @@ export const Employees: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleCreateEmployee} className="p-6 space-y-4 text-xs">
+            <form onSubmit={handleCreateEmployee} className="p-4 sm:p-6 space-y-4 text-xs overflow-y-auto flex-1">
               {/* Photo & Webcam Enrollment Section */}
-              <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-950/60 border border-slate-800">
+              <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 p-4 rounded-xl bg-slate-950/60 border border-slate-800 text-center sm:text-left">
                 <div className="relative w-16 h-16 rounded-full overflow-hidden bg-slate-800 border-2 border-emerald-500/40 shrink-0">
                   {photoUrl ? (
                     <img src={photoUrl} alt="Preview" className="w-full h-full object-cover" />
@@ -273,7 +273,7 @@ export const Employees: React.FC = () => {
                     </div>
                   )}
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 flex-1">
                   <p className="font-semibold text-white">Facial Baseline Photo</p>
                   <p className="text-slate-400 text-[11px]">
                     Used to extract 192-d biometric vector embedding.
@@ -281,7 +281,7 @@ export const Employees: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setIsWebcamOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-medium transition"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-medium transition"
                   >
                     <Camera className="w-3.5 h-3.5" />
                     Capture via Webcam
@@ -289,7 +289,7 @@ export const Employees: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-300 font-medium mb-1">Full Name</label>
                   <input
@@ -316,7 +316,7 @@ export const Employees: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-300 font-medium mb-1">Email Address</label>
                   <input
@@ -340,7 +340,7 @@ export const Employees: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-300 font-medium mb-1">Department</label>
                   <select
@@ -368,7 +368,7 @@ export const Employees: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-300 font-medium mb-1">Shift Start Time</label>
                   <input

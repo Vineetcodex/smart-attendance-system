@@ -167,56 +167,59 @@ export const MasterQrPoster: React.FC<Props> = ({ org }) => {
       <div
         ref={posterRef}
         id="printable-poster"
-        className="bg-white text-slate-900 rounded-2xl p-8 shadow-2xl border-4 border-emerald-500 max-w-md mx-auto text-center relative overflow-hidden"
+        className="bg-white text-slate-900 rounded-2xl p-5 sm:p-8 shadow-2xl border-4 border-emerald-500 max-w-md mx-auto text-center relative overflow-hidden w-full"
       >
         {/* Header Ribbon */}
-        <div className="bg-slate-900 text-white py-3 px-4 -mx-8 -mt-8 mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-left">
-            <div className="w-7 h-7 rounded-lg bg-emerald-500 flex items-center justify-center">
+        <div className="bg-slate-900 text-white py-2.5 sm:py-3 px-3.5 sm:px-4 -mx-5 sm:-mx-8 -mt-5 sm:-mt-8 mb-4 sm:mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-left min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-emerald-500 flex items-center justify-center shrink-0">
               <ShieldCheck className="w-4 h-4 text-white" />
             </div>
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider">{org.name}</p>
-              <p className="text-[10px] text-slate-400">Touchless Multi-Factor Verification</p>
+            <div className="min-w-0">
+              <p className="text-xs font-bold uppercase tracking-wider truncate">{org.name}</p>
+              <p className="text-[9px] sm:text-[10px] text-slate-400">Touchless Multi-Factor Verification</p>
             </div>
           </div>
-          <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-mono px-2 py-0.5 rounded">
+          <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-mono px-2 py-0.5 rounded shrink-0">
             {org.code}
           </span>
         </div>
 
-        <h2 className="text-xl font-extrabold text-slate-900 tracking-tight mb-1">
+        <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight mb-1">
           OFFICE ATTENDANCE STATION
         </h2>
-        <p className="text-xs text-slate-500 mb-6">
+        <p className="text-xs text-slate-500 mb-4 sm:mb-6">
           Scan with your registered smartphone app to verify presence
         </p>
 
         {/* Master QR Code Frame */}
-        <div className="p-4 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-300 inline-block mb-6 shadow-inner relative group">
-          <QRCodeSVG
-            id="master-qr-svg-canvas"
-            value={org.masterQrPayload}
-            size={220}
-            level="H"
-            includeMargin={true}
-            imageSettings={{
-              src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%2316a34a"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>',
-              x: undefined,
-              y: undefined,
-              height: 36,
-              width: 36,
-              excavate: true,
-            }}
-          />
-          <div className="mt-2 text-[10px] font-mono text-slate-400">
+        <div className="p-3 sm:p-4 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-300 inline-block mb-4 sm:mb-6 shadow-inner relative group max-w-full">
+          <div className="flex justify-center">
+            <QRCodeSVG
+              id="master-qr-svg-canvas"
+              value={org.masterQrPayload}
+              size={200}
+              level="H"
+              includeMargin={true}
+              className="max-w-[200px] sm:max-w-[220px] w-full h-auto"
+              imageSettings={{
+                src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%2316a34a"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>',
+                x: undefined,
+                y: undefined,
+                height: 32,
+                width: 32,
+                excavate: true,
+              }}
+            />
+          </div>
+          <div className="mt-2 text-[9px] sm:text-[10px] font-mono text-slate-400">
             Encrypted AES-256 Signature • Active
           </div>
         </div>
 
         {/* 3 Step Instruction Guide */}
-        <div className="grid grid-cols-3 gap-2 text-left bg-slate-100 p-3 rounded-xl mb-4 text-[10px] text-slate-700">
-          <div className="space-y-1">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-left bg-slate-100 p-2.5 sm:p-3 rounded-xl mb-4 text-[10px] text-slate-700">
+          <div className="space-y-0.5 sm:space-y-1">
             <div className="flex items-center gap-1 font-bold text-slate-900">
               <Camera className="w-3 h-3 text-emerald-600" />
               1. Position
@@ -225,7 +228,7 @@ export const MasterQrPoster: React.FC<Props> = ({ org }) => {
               Stand in front of wall & open app selfie camera.
             </p>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-0.5 sm:space-y-1">
             <div className="flex items-center gap-1 font-bold text-slate-900">
               <Sparkles className="w-3 h-3 text-emerald-600" />
               2. Align
@@ -234,7 +237,7 @@ export const MasterQrPoster: React.FC<Props> = ({ org }) => {
               Include your face and this QR in the single frame.
             </p>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-0.5 sm:space-y-1">
             <div className="flex items-center gap-1 font-bold text-slate-900">
               <CheckCircle className="w-3 h-3 text-emerald-600" />
               3. Done!
@@ -246,12 +249,12 @@ export const MasterQrPoster: React.FC<Props> = ({ org }) => {
         </div>
 
         {/* Footer info */}
-        <div className="flex items-center justify-between text-[10px] text-slate-400 pt-2 border-t border-slate-200">
+        <div className="flex items-center justify-between text-[9px] sm:text-[10px] text-slate-400 pt-2 border-t border-slate-200">
           <span className="flex items-center gap-1">
             <MapPin className="w-2.5 h-2.5" />
-            Geofence Radius: {org.geofenceRadiusMeters}m
+            Radius: {org.geofenceRadiusMeters}m
           </span>
-          <span>Mount height: 1.4m - 1.6m</span>
+          <span>Mount: 1.4m - 1.6m</span>
         </div>
       </div>
     </div>

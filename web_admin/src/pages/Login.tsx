@@ -32,13 +32,13 @@ export const Login: React.FC<Props> = ({ onLoginSuccess }) => {
       <div className="absolute -top-40 -left-40 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="w-full max-w-md bg-slate-900/90 border border-slate-800 rounded-3xl p-8 shadow-2xl backdrop-blur-xl relative z-10">
+      <div className="w-full max-w-md bg-slate-900/90 border border-slate-800 rounded-2xl sm:rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-xl relative z-10 my-auto">
         {/* Brand Header */}
-        <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/30 mx-auto mb-4">
-            <ShieldCheck className="w-8 h-8 text-white" />
+        <div className="text-center mb-6 sm:mb-8">
+          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/30 mx-auto mb-3 sm:mb-4">
+            <ShieldCheck className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-extrabold text-white tracking-tight">DRP Technology</h1>
+          <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">DRP Technology</h1>
           <p className="text-slate-400 text-xs mt-1">
             Automated QR & Facial Biometric Attendance Portal
           </p>

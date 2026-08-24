@@ -16,11 +16,18 @@ const AdminLayout: React.FC<{
   onLogout: () => void;
   setOrg: (org: Organization) => void;
 }> = ({ org, onLogout, setOrg }) => {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-100 font-sans">
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
-        <Navbar org={org} onLogout={onLogout} />
+    <div className="flex min-h-screen bg-slate-950 text-slate-100 font-sans relative overflow-x-hidden">
+      <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+      <div className="flex-1 flex flex-col min-w-0 w-full">
+        <Navbar
+          org={org}
+          onLogout={onLogout}
+          onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
+          isSidebarOpen={isSidebarOpen}
+        />
         <main className="flex-1 overflow-y-auto">
           <Routes>
             <Route path="/" element={<Dashboard org={org} />} />
