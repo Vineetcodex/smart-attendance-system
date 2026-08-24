@@ -147,6 +147,19 @@ export interface AttendanceStats {
   activeGeofenceViolations?: number;
 }
 
+export const APP_VERSION = '1.0.0';
+export const APP_VERSION_CODE = 1;
+
+export interface AppVersionInfo {
+  latestVersion: string;
+  versionCode: number;
+  minSupportedVersion: string;
+  releaseNotes: string;
+  downloadUrl: string;
+  releasesPageUrl: string;
+  mandatory?: boolean;
+}
+
 // Local Euclidean distance helper for offline face verification
 function calculateLocalDistance(vecA: number[], vecB: number[]): { distance: number; similarity: number; isMatch: boolean } {
   if (!vecA || !vecB || vecA.length === 0 || vecB.length === 0) {
@@ -171,6 +184,22 @@ function calculateLocalDistance(vecA: number[], vecB: number[]): { distance: num
 }
 
 export const api = {
+  // Check for in-app software updates
+  async checkAppUpdate(): Promise<{ hasUpdate: boolean; currentVersion: string; versionInfo?: AppVersionInfo }> {
+    try {
+      const res = await apiClient.get('/app/version');
+      const data: AppVersionInfo = res.data;
+      const isNewer = Boolean(
+        data &&
+          ((data.versionCode && data.versionCode > APP_VERSION_CODE) ||
+            (data.latestVersion && data.latestVersion !== APP_VERSION))
+      );
+      return { hasUpdate: isNewer, currentVersion: APP_VERSION, versionInfo: data };
+    } catch {
+      return { hasUpdate: false, currentVersion: APP_VERSION };
+    }
+  },
+
   // Test connection to backend
   async testConnection(targetUrl?: string): Promise<{ connected: boolean; url: string; message: string }> {
     const testUrl = targetUrl || getApiBase();

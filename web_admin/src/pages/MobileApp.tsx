@@ -28,8 +28,20 @@ import {
   RotateCcw,
   Building2,
   MapPinOff,
+  Download,
+  ArrowUpCircle,
+  ExternalLink,
 } from 'lucide-react';
-import { api, Employee, Organization, AttendanceLog, setApiBase, getApiBase } from '../services/api.js';
+import {
+  api,
+  Employee,
+  Organization,
+  AttendanceLog,
+  setApiBase,
+  getApiBase,
+  APP_VERSION,
+  AppVersionInfo,
+} from '../services/api.js';
 import { StatusBadge } from '../components/StatusBadge.js';
 import { validateAndNormalizeEmployeeCode } from '../utils/codeValidator.js';
 import {
@@ -263,6 +275,43 @@ export const MobileApp: React.FC = () => {
     allowedRadiusMeters: 50,
   });
 
+  // In-App Software Update Modal State
+  const [updateModal, setUpdateModal] = useState<{
+    isOpen: boolean;
+    versionInfo?: AppVersionInfo;
+    isChecking: boolean;
+    hasUpdate: boolean;
+  }>({
+    isOpen: false,
+    isChecking: false,
+    hasUpdate: false,
+  });
+
+  const handleCheckUpdate = async (isManual = false) => {
+    setUpdateModal((prev) => ({ ...prev, isChecking: true }));
+    try {
+      const res = await api.checkAppUpdate();
+      setUpdateModal({
+        isOpen: res.hasUpdate,
+        versionInfo: res.versionInfo,
+        isChecking: false,
+        hasUpdate: res.hasUpdate,
+      });
+      if (isManual) {
+        if (res.hasUpdate) {
+          showToast(`🚀 New Version ${res.versionInfo?.latestVersion} Available!`);
+        } else {
+          showToast(`✅ You are using the latest version (v${APP_VERSION})`);
+        }
+      }
+    } catch {
+      setUpdateModal((prev) => ({ ...prev, isChecking: false }));
+      if (isManual) {
+        showToast(`✅ App is up to date (v${APP_VERSION})`);
+      }
+    }
+  };
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
@@ -313,12 +362,13 @@ export const MobileApp: React.FC = () => {
     setSignupCode(`DRP${formatted}`);
   };
 
-  // Load Models on Mount
+  // Load Models & Check Updates on Mount
   useEffect(() => {
     loadFaceDetectionModels().catch((err) => {
       console.warn('Face models loading background:', err);
     });
     checkBackendHealth();
+    handleCheckUpdate(false);
   }, []);
 
   // Load Initial Org & Stored Session with fresh database embeddings
@@ -2166,12 +2216,46 @@ export const MobileApp: React.FC = () => {
                     <span className="text-slate-400">Biometric Model</span>
                     <span className="text-white font-mono text-[10px]">SCRFD + ArcFace 512-D</span>
                   </div>
-                  <div className="flex justify-between py-1.5">
+                  <div className="flex justify-between py-1.5 border-b border-slate-800">
                     <span className="text-slate-400">Face ID Status</span>
                     <span className="text-emerald-400 font-semibold flex items-center gap-1">
                       <ShieldCheck className="w-3.5 h-3.5" /> Enrolled (Active)
                     </span>
                   </div>
+                  <div className="flex justify-between items-center py-1.5">
+                    <span className="text-slate-400">App Version</span>
+                    <span className="text-white font-mono font-semibold">v{APP_VERSION}</span>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-bold text-white">Software Updates</p>
+                      <p className="text-[11px] text-slate-400">Check for the latest APK releases</p>
+                    </div>
+                    <span className="text-[10px] font-mono bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full">
+                      v{APP_VERSION}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={updateModal.isChecking}
+                    onClick={() => handleCheckUpdate(true)}
+                    className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition flex items-center justify-center gap-2"
+                  >
+                    {updateModal.isChecking ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                        Checking for Updates...
+                      </>
+                    ) : (
+                      <>
+                        <ArrowUpCircle className="w-3.5 h-3.5 text-emerald-400" />
+                        Check for App Updates
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             )}
@@ -2804,6 +2888,83 @@ export const MobileApp: React.FC = () => {
             >
               Understood (Close)
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          MODAL 5: IN-APP SOFTWARE UPDATE POPUP MODAL
+         ========================================================================= */}
+      {updateModal.isOpen && updateModal.versionInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+          <div className="w-full max-w-sm bg-slate-900 border-2 border-emerald-500/50 rounded-3xl p-6 shadow-2xl shadow-emerald-950/50 space-y-4 text-center relative overflow-hidden">
+            {/* Ambient Background Glow */}
+            <div className="absolute -top-16 -left-16 w-32 h-32 bg-emerald-500/20 rounded-full blur-2xl pointer-events-none" />
+            <div className="absolute -bottom-16 -right-16 w-32 h-32 bg-teal-500/20 rounded-full blur-2xl pointer-events-none" />
+
+            {/* Glowing Icon */}
+            <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-emerald-600/30 to-teal-500/30 border border-emerald-500/40 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20 text-emerald-400">
+              <ArrowUpCircle className="w-8 h-8 animate-bounce text-emerald-400" />
+            </div>
+
+            {/* Header Title */}
+            <div className="space-y-1">
+              <h3 className="text-lg font-extrabold text-white tracking-tight">
+                New Update Available!
+              </h3>
+              <div className="flex items-center justify-center gap-2 text-xs">
+                <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono text-[11px]">
+                  v{APP_VERSION}
+                </span>
+                <span className="text-emerald-400">➔</span>
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono font-bold text-[11px] border border-emerald-500/30">
+                  v{updateModal.versionInfo.latestVersion}
+                </span>
+              </div>
+            </div>
+
+            {/* Release Notes */}
+            <div className="p-3.5 bg-slate-950/80 rounded-2xl border border-slate-800 text-left space-y-1.5 text-xs">
+              <p className="text-slate-400 font-semibold text-[10px] uppercase tracking-wider">
+                What's New:
+              </p>
+              <div className="text-slate-300 text-xs whitespace-pre-line leading-relaxed">
+                {updateModal.versionInfo.releaseNotes || 'Performance improvements and security updates.'}
+              </div>
+            </div>
+
+            {/* 1-Tap Download & Install Button */}
+            <a
+              href={updateModal.versionInfo.downloadUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition active:scale-95 flex items-center justify-center gap-2"
+            >
+              <Download className="w-4 h-4" />
+              Download & Install Update (APK) 🚀
+            </a>
+
+            {/* Releases Page Link */}
+            <a
+              href={updateModal.versionInfo.releasesPageUrl || 'https://github.com/Vineetcodex/smart-attendance-system/releases'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[11px] text-slate-400 hover:text-emerald-400 transition flex items-center justify-center gap-1"
+            >
+              <span>View Release Notes on GitHub</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+
+            {/* Dismiss Button (if not mandatory) */}
+            {!updateModal.versionInfo.mandatory && (
+              <button
+                type="button"
+                onClick={() => setUpdateModal((prev) => ({ ...prev, isOpen: false }))}
+                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs font-semibold transition"
+              >
+                Remind Me Later
+              </button>
+            )}
           </div>
         </div>
       )}

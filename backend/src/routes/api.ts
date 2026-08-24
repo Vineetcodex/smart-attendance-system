@@ -35,11 +35,15 @@ router.get('/network-info', (req, res) => {
 
 router.get('/app/version', (req, res) => {
   res.json({
-    latestVersion: '1.0.0',
-    versionCode: 1,
+    success: true,
+    latestVersion: '1.0.1',
+    versionCode: 2,
     minSupportedVersion: '1.0.0',
-    releaseNotes: 'Triple-factor attendance verification with 3D multi-pose Face ID & anti-malpractice detection.',
-    downloadUrl: 'https://github.com/Vineetcodex/smart-attendance-system/releases/latest',
+    releaseNotes: '• Real-time Office Geofence Perimeter Warning Popup\n• 24/7 Render Cloud Global Backend Integration\n• In-App Auto-Update Notification Engine',
+    downloadUrl: 'https://github.com/Vineetcodex/smart-attendance-system/releases/latest/download/app-debug.apk',
+    releasesPageUrl: 'https://github.com/Vineetcodex/smart-attendance-system/releases/latest',
+    mandatory: false,
+    updatedAt: new Date().toISOString(),
   });
 });
 
