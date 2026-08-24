@@ -4,6 +4,8 @@ import {
   Download,
   Search,
   CheckCircle2,
+  LogIn,
+  LogOut,
 } from 'lucide-react';
 import { api, AttendanceLog } from '../services/api.js';
 import { StatusBadge } from '../components/StatusBadge.js';
@@ -60,7 +62,7 @@ export const Reports: React.FC = () => {
             Attendance Audit Logs & Reports
           </h2>
           <p className="text-slate-400 text-sm mt-1">
-            Historical attendance records with multi-factor confidence scores, geofence metrics, and CSV export.
+            Historical attendance records with multi-factor confidence scores, entry/exit tracking, and CSV export.
           </p>
         </div>
 
@@ -109,23 +111,24 @@ export const Reports: React.FC = () => {
 
           {/* Status Filter */}
           <div>
-            <label className="block text-slate-400 font-medium mb-1">Verification Status</label>
+            <label className="block text-slate-400 font-medium mb-1">Attendance Status</label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white focus:outline-none focus:border-emerald-500"
             >
               <option value="ALL">All Statuses</option>
-              <option value="PRESENT">Present</option>
+              <option value="PRESENT">Present (Entry)</option>
+              <option value="CHECKED_OUT">Checked Out (Departure)</option>
               <option value="LATE">Late Arrival</option>
-              <option value="REJECTED">Rejected Attempts</option>
+              <option value="REJECTED">Rejected</option>
             </select>
           </div>
 
-          {/* Date Picker */}
+          {/* Date Filter */}
           <div>
-            <label className="block text-slate-400 font-medium mb-1">Filter by Date</label>
-            <div className="flex items-center gap-2">
+            <label className="block text-slate-400 font-medium mb-1">Filter Date</label>
+            <div className="flex gap-2">
               <input
                 type="date"
                 value={startDate}
@@ -167,11 +170,11 @@ export const Reports: React.FC = () => {
                 <tr>
                   <th className="py-3 px-4">Date & Time</th>
                   <th className="py-3 px-4">Employee</th>
-                  <th className="py-3 px-4">Department</th>
+                  <th className="py-3 px-4">Event Type</th>
                   <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">Work Duration</th>
                   <th className="py-3 px-4">Anti-Spoof Liveness</th>
                   <th className="py-3 px-4">ArcFace Match</th>
-                  <th className="py-3 px-4">GPS Radius</th>
                   <th className="py-3 px-4">Failure Reason</th>
                 </tr>
               </thead>
@@ -181,7 +184,7 @@ export const Reports: React.FC = () => {
                     <td className="py-3.5 px-4 font-mono text-slate-300">
                       <div>{new Date(log.timestamp).toLocaleDateString()}</div>
                       <div className="text-[11px] text-slate-500">
-                        {new Date(log.timestamp).toLocaleTimeString()}
+                        {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                       </div>
                     </td>
                     <td className="py-3.5 px-4">
@@ -196,13 +199,34 @@ export const Reports: React.FC = () => {
                         />
                         <div>
                           <p className="font-semibold text-white">{log.employeeName}</p>
-                          <p className="text-[11px] text-slate-400 font-mono">{log.employeeCode}</p>
+                          <p className="text-[11px] text-slate-400 font-mono">{log.employeeCode} • {log.department}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="py-3.5 px-4 text-slate-300">{log.department}</td>
                     <td className="py-3.5 px-4">
-                      <StatusBadge status={log.status} />
+                      {log.punchType === 'CHECK_OUT' || log.status === 'CHECKED_OUT' ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                          <LogOut className="w-3 h-3" />
+                          Departure
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          <LogIn className="w-3 h-3" />
+                          Entry
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <StatusBadge status={log.status} punchType={log.punchType} />
+                    </td>
+                    <td className="py-3.5 px-4 font-mono">
+                      {log.workDurationMinutes ? (
+                        <span className="text-purple-300 font-semibold px-2 py-0.5 rounded bg-purple-500/10 border border-purple-500/20">
+                          {Math.floor(log.workDurationMinutes / 60)}h {log.workDurationMinutes % 60}m
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">--</span>
+                      )}
                     </td>
                     <td className="py-3.5 px-4">
                       {log.antiSpoofPassed !== false ? (
@@ -222,16 +246,8 @@ export const Reports: React.FC = () => {
                         {(log.faceSimilarityScore * 100).toFixed(1)}%
                       </span>
                     </td>
-                    <td className="py-3.5 px-4 font-mono text-slate-300">
-                      <div>{log.distanceMeters != null ? `${log.distanceMeters.toFixed(1)}m away` : 'In Perimeter'}</div>
-                      {log.isMockLocation && (
-                        <span className="text-[10px] text-rose-400 font-sans font-semibold">
-                          ⚠️ Spoofed GPS
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-400 text-[11px] max-w-xs truncate">
-                      {log.failureReason || '—'}
+                    <td className="py-3.5 px-4 text-slate-400">
+                      {log.failureReason || <span className="text-slate-600">None (Passed)</span>}
                     </td>
                   </tr>
                 ))}

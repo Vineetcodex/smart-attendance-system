@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import {
   Users,
   CheckCircle2,
-  Clock,
   Radio,
-  Sparkles,
   MapPin,
+  LogIn,
+  LogOut,
+  Building2,
 } from 'lucide-react';
 import { api, AttendanceLog, AttendanceStats, Organization } from '../services/api.js';
 import { StatusBadge } from '../components/StatusBadge.js';
@@ -21,12 +22,13 @@ export const Dashboard: React.FC<Props> = ({ org }) => {
   const [recentLogs, setRecentLogs] = useState<AttendanceLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPosterModal, setShowPosterModal] = useState(false);
+  const [liveToast, setLiveToast] = useState<{ message: string; type: 'CHECK_IN' | 'CHECK_OUT'; time: string } | null>(null);
 
   const fetchDashboardData = async () => {
     try {
       const [statsData, logsData] = await Promise.all([api.getStats(), api.getAttendanceLogs()]);
       setStats(statsData);
-      setRecentLogs(logsData.slice(0, 10)); // top 10 recent
+      setRecentLogs(logsData.slice(0, 15)); // top 15 recent
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
     } finally {
@@ -43,9 +45,33 @@ export const Dashboard: React.FC<Props> = ({ org }) => {
     eventSource.onmessage = (event) => {
       try {
         const newLog: AttendanceLog = JSON.parse(event.data);
-        setRecentLogs((prev) => [newLog, ...prev.filter((l) => l.id !== newLog.id)].slice(0, 10));
+        setRecentLogs((prev) => [newLog, ...prev.filter((l) => l.id !== newLog.id)].slice(0, 15));
+        
         // Refresh stats on new event
         api.getStats().then(setStats).catch(console.error);
+
+        // Show live entry / departure popup banner
+        const isExit = newLog.punchType === 'CHECK_OUT' || newLog.status === 'CHECKED_OUT';
+        const timeStr = new Date(newLog.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        if (isExit) {
+          const dur = newLog.workDurationMinutes
+            ? ` • Worked ${Math.floor(newLog.workDurationMinutes / 60)}h ${newLog.workDurationMinutes % 60}m`
+            : '';
+          setLiveToast({
+            message: `🔴 ${newLog.employeeName} (${newLog.employeeCode}) left the office${dur}`,
+            type: 'CHECK_OUT',
+            time: timeStr,
+          });
+        } else if (newLog.status !== 'REJECTED') {
+          setLiveToast({
+            message: `🟢 ${newLog.employeeName} (${newLog.employeeCode}) arrived at office (Checked In)`,
+            type: 'CHECK_IN',
+            time: timeStr,
+          });
+        }
+
+        setTimeout(() => setLiveToast(null), 6000);
       } catch (err) {
         console.error('Error parsing SSE event:', err);
       }
@@ -57,19 +83,44 @@ export const Dashboard: React.FC<Props> = ({ org }) => {
   }, []);
 
   return (
-    <div className="p-8 space-y-8 max-w-7xl mx-auto">
+    <div className="p-8 space-y-8 max-w-7xl mx-auto relative">
+      {/* Live Admin Notification Toast */}
+      {liveToast && (
+        <div className={`fixed top-6 right-6 z-50 p-4 rounded-2xl border shadow-2xl backdrop-blur-xl flex items-center gap-3.5 animate-bounce transition-all ${
+          liveToast.type === 'CHECK_OUT'
+            ? 'bg-purple-950/95 border-purple-500/50 text-white'
+            : 'bg-emerald-950/95 border-emerald-500/50 text-white'
+        }`}>
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+            liveToast.type === 'CHECK_OUT' ? 'bg-purple-500/20 text-purple-300' : 'bg-emerald-500/20 text-emerald-300'
+          }`}>
+            {liveToast.type === 'CHECK_OUT' ? <LogOut className="w-5 h-5" /> : <LogIn className="w-5 h-5" />}
+          </div>
+          <div>
+            <p className="text-xs font-bold">{liveToast.message}</p>
+            <p className="text-[10px] text-slate-400 font-mono">Recorded at {liveToast.time} • Live Push</p>
+          </div>
+          <button
+            onClick={() => setLiveToast(null)}
+            className="p-1 rounded-lg text-slate-400 hover:text-white"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Top Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl relative overflow-hidden">
         <div className="relative z-10">
           <div className="flex items-center gap-2 mb-1 text-emerald-400 text-xs font-semibold uppercase tracking-wider">
             <Radio className="w-3.5 h-3.5 animate-pulse" />
-            Live Biometric & Optical Stream
+            Live Biometric Entry & Departure Stream
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
             {org ? org.name : 'Office'} Attendance Command Center
           </h2>
           <p className="text-slate-400 text-sm mt-1">
-            Real-time triple-factor attendance monitoring via Master QR, Face Vector & GPS Geofencing.
+            Real-time tracking of employee office check-ins, departures, and working hours.
           </p>
         </div>
 
@@ -119,55 +170,58 @@ export const Dashboard: React.FC<Props> = ({ org }) => {
 
       {/* KPI Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {/* Total Employees */}
+        {/* In Office Now (Live Presence) */}
+        <div className="glass-card p-5 rounded-2xl border border-emerald-500/30 bg-emerald-950/20 relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              In Office Now
+            </p>
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+              <Building2 className="w-4 h-4" />
+            </div>
+          </div>
+          <p className="text-3xl font-extrabold text-emerald-300 mt-3">{stats?.inOfficeCount ?? stats?.presentToday ?? 0}</p>
+          <p className="text-xs text-slate-400 mt-1">Currently inside premises</p>
+        </div>
+
+        {/* Total Registered Staff */}
         <div className="glass-card p-5 rounded-2xl border border-slate-800 relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Active Staff</p>
+            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Staff</p>
             <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center">
               <Users className="w-4 h-4" />
             </div>
           </div>
           <p className="text-3xl font-extrabold text-white mt-3">{stats?.totalEmployees ?? '--'}</p>
-          <p className="text-xs text-slate-400 mt-1">Registered in organization</p>
+          <p className="text-xs text-slate-400 mt-1">Enrolled with 3D Face ID</p>
         </div>
 
-        {/* Present Today */}
+        {/* Total Check-Ins Today */}
         <div className="glass-card p-5 rounded-2xl border border-slate-800 relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Present Today</p>
+            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Entries Today</p>
             <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
-              <CheckCircle2 className="w-4 h-4" />
+              <LogIn className="w-4 h-4" />
             </div>
           </div>
           <div className="flex items-baseline gap-2 mt-3">
-            <p className="text-3xl font-extrabold text-emerald-400">{stats?.presentToday ?? '--'}</p>
-            <span className="text-xs text-emerald-500 font-medium">({stats?.attendanceRate ?? 0}%)</span>
+            <p className="text-3xl font-extrabold text-white">{stats?.checkedInToday ?? stats?.presentToday ?? '--'}</p>
+            <span className="text-xs text-emerald-400 font-medium">({stats?.attendanceRate ?? 0}%)</span>
           </div>
-          <p className="text-xs text-slate-400 mt-1">Verified on-time arrivals</p>
+          <p className="text-xs text-slate-400 mt-1">Check-in punches recorded</p>
         </div>
 
-        {/* Late Arrivals */}
+        {/* Total Check-Outs Today */}
         <div className="glass-card p-5 rounded-2xl border border-slate-800 relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Late Arrivals</p>
-            <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center">
-              <Clock className="w-4 h-4" />
-            </div>
-          </div>
-          <p className="text-3xl font-extrabold text-amber-400 mt-3">{stats?.lateToday ?? '--'}</p>
-          <p className="text-xs text-slate-400 mt-1">Past scheduled shift start</p>
-        </div>
-
-        {/* Verification Accuracy Rate */}
-        <div className="glass-card p-5 rounded-2xl border border-slate-800 relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Avg Face Confidence</p>
+            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Departures Today</p>
             <div className="w-8 h-8 rounded-lg bg-purple-500/10 text-purple-400 flex items-center justify-center">
-              <Sparkles className="w-4 h-4" />
+              <LogOut className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-3xl font-extrabold text-purple-400 mt-3">{stats?.averageConfidence ?? 96.5}%</p>
-          <p className="text-xs text-slate-400 mt-1">Cosine vector similarity score</p>
+          <p className="text-3xl font-extrabold text-purple-400 mt-3">{stats?.checkedOutToday ?? 0}</p>
+          <p className="text-xs text-slate-400 mt-1">Completed check-out punches</p>
         </div>
       </div>
 
@@ -177,10 +231,10 @@ export const Dashboard: React.FC<Props> = ({ org }) => {
           <div>
             <h3 className="font-semibold text-white text-base flex items-center gap-2">
               <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
-              Live Attendance Feed
+              Live Entry & Exit Feed
             </h3>
             <p className="text-xs text-slate-400">
-              Streaming verification attempts in real-time as employees scan at the office.
+              Streaming real-time biometric arrivals and departures as employees scan at the office.
             </p>
           </div>
           <span className="text-xs bg-slate-800 text-slate-300 px-3 py-1 rounded-lg font-mono">
@@ -200,11 +254,11 @@ export const Dashboard: React.FC<Props> = ({ org }) => {
               <thead className="bg-slate-950/60 text-slate-400 text-xs font-medium uppercase tracking-wider border-b border-slate-800">
                 <tr>
                   <th className="py-3 px-4">Employee</th>
-                  <th className="py-3 px-4">Department</th>
+                  <th className="py-3 px-4">Event Type</th>
                   <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Anti-Spoof Liveness</th>
-                  <th className="py-3 px-4">ArcFace Similarity</th>
-                  <th className="py-3 px-4">GPS Distance</th>
+                  <th className="py-3 px-4">Work Duration</th>
+                  <th className="py-3 px-4">Anti-Spoofing</th>
+                  <th className="py-3 px-4">Face Confidence</th>
                   <th className="py-3 px-4">Time</th>
                 </tr>
               </thead>
@@ -220,13 +274,34 @@ export const Dashboard: React.FC<Props> = ({ org }) => {
                         />
                         <div>
                           <p className="font-semibold text-white leading-tight">{log.employeeName}</p>
-                          <p className="text-xs text-slate-400 font-mono">{log.employeeCode}</p>
+                          <p className="text-xs text-slate-400 font-mono">{log.employeeCode} • {log.department}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="py-3.5 px-4 text-slate-300">{log.department}</td>
                     <td className="py-3.5 px-4">
-                      <StatusBadge status={log.status} />
+                      {log.punchType === 'CHECK_OUT' || log.status === 'CHECKED_OUT' ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                          <LogOut className="w-3 h-3" />
+                          Office Departure
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          <LogIn className="w-3 h-3" />
+                          Office Entry
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <StatusBadge status={log.status} punchType={log.punchType} />
+                    </td>
+                    <td className="py-3.5 px-4 text-xs font-mono">
+                      {log.workDurationMinutes ? (
+                        <span className="text-purple-300 font-semibold px-2 py-0.5 rounded bg-purple-500/10 border border-purple-500/20">
+                          {Math.floor(log.workDurationMinutes / 60)}h {log.workDurationMinutes % 60}m
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">--</span>
+                      )}
                     </td>
                     <td className="py-3.5 px-4">
                       {log.antiSpoofPassed !== false ? (
@@ -252,17 +327,7 @@ export const Dashboard: React.FC<Props> = ({ org }) => {
                         </span>
                       </div>
                     </td>
-                    <td className="py-3.5 px-4 text-xs">
-                      <span className="font-mono text-slate-300">
-                        {log.distanceMeters != null ? `${log.distanceMeters.toFixed(1)}m` : 'Verified'}
-                      </span>
-                      {log.isMockLocation && (
-                        <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                          MOCK GPS
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-xs text-slate-400 font-mono">
+                    <td className="py-3.5 px-4 text-xs text-slate-300 font-mono">
                       {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                     </td>
                   </tr>

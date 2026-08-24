@@ -1,21 +1,31 @@
 import React from 'react';
-import { CheckCircle2, Clock, XCircle } from 'lucide-react';
+import { CheckCircle2, Clock, XCircle, LogOut } from 'lucide-react';
 
 interface Props {
-  status: 'PRESENT' | 'LATE' | 'REJECTED' | string;
+  status: 'PRESENT' | 'LATE' | 'CHECKED_OUT' | 'CHECK_OUT' | 'CHECK_IN' | 'REJECTED' | string;
+  punchType?: 'CHECK_IN' | 'CHECK_OUT';
   size?: 'sm' | 'md';
 }
 
-export const StatusBadge: React.FC<Props> = ({ status, size = 'sm' }) => {
+export const StatusBadge: React.FC<Props> = ({ status, punchType, size = 'sm' }) => {
   const isSm = size === 'sm';
   const sizeClass = isSm ? 'text-xs px-2.5 py-1' : 'text-sm px-3.5 py-1.5';
 
-  if (status === 'PRESENT') {
+  if (status === 'CHECKED_OUT' || punchType === 'CHECK_OUT' || status === 'CHECK_OUT') {
+    return (
+      <span className={`inline-flex items-center gap-1.5 font-medium rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20 ${sizeClass}`}>
+        <LogOut className={isSm ? "w-3 h-3" : "w-4 h-4"} />
+        Checked Out
+      </span>
+    );
+  }
+
+  if (status === 'PRESENT' || punchType === 'CHECK_IN' || status === 'CHECK_IN') {
     return (
       <span className={`inline-flex items-center gap-1.5 font-medium rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 ${sizeClass}`}>
         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
         <CheckCircle2 className={isSm ? "w-3 h-3" : "w-4 h-4"} />
-        Present
+        Present (In-Office)
       </span>
     );
   }
@@ -36,3 +46,4 @@ export const StatusBadge: React.FC<Props> = ({ status, size = 'sm' }) => {
     </span>
   );
 };
+

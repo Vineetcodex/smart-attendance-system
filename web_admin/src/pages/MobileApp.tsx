@@ -26,6 +26,7 @@ import {
   Trash2,
   Timer,
   RotateCcw,
+  Building2,
 } from 'lucide-react';
 import { api, Employee, Organization, AttendanceLog, setApiBase, getApiBase } from '../services/api.js';
 import { StatusBadge } from '../components/StatusBadge.js';
@@ -161,6 +162,7 @@ export const MobileApp: React.FC = () => {
   const [isAttendanceCameraActive, setIsAttendanceCameraActive] = useState(false);
   const [attendanceStep, setAttendanceStep] = useState<'QR_SCAN' | 'FACE_SCAN'>('QR_SCAN');
   const attendanceStepRef = useRef<'QR_SCAN' | 'FACE_SCAN'>('QR_SCAN');
+  const [punchType, setPunchType] = useState<'CHECK_IN' | 'CHECK_OUT'>('CHECK_IN');
   const [scannedQrPayload, setScannedQrPayload] = useState<string | null>(null);
   const scannedQrPayloadRef = useRef<string | null>(null);
   const [isQrVerified, setIsQrVerified] = useState(false);
@@ -332,6 +334,30 @@ export const MobileApp: React.FC = () => {
       setLoadingLogs(false);
     }
   };
+
+  // Derive today's presence and logs for the current employee
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayValidLogs = Array.isArray(myLogs)
+    ? myLogs.filter((l) => l.timestamp && l.timestamp.startsWith(todayStr) && l.status !== 'REJECTED')
+    : [];
+  const lastPunchToday = todayValidLogs.length > 0 ? todayValidLogs[0] : null;
+  const isInOffice = lastPunchToday
+    ? lastPunchToday.punchType === 'CHECK_IN' || lastPunchToday.status === 'PRESENT' || lastPunchToday.status === 'LATE'
+    : false;
+  const checkInLogToday = [...todayValidLogs].reverse().find(
+    (l) => l.punchType === 'CHECK_IN' || l.status === 'PRESENT' || l.status === 'LATE'
+  );
+  const checkOutLogToday = todayValidLogs.find(
+    (l) => l.punchType === 'CHECK_OUT' || l.status === 'CHECKED_OUT'
+  );
+
+  useEffect(() => {
+    if (isInOffice) {
+      setPunchType('CHECK_OUT');
+    } else {
+      setPunchType('CHECK_IN');
+    }
+  }, [isInOffice]);
 
   useEffect(() => {
     fetchInitialData();
@@ -963,6 +989,7 @@ export const MobileApp: React.FC = () => {
         employeeId: currentEmp.id,
         qrPayload: qrPayloadToSend,
         qrScannedAt: qrScannedTimestampRef.current || qrScannedTimestamp || undefined,
+        punchType,
         faceEmbedding: faceData.descriptor || [],
         livenessScore: faceData.antiSpoofing.livenessScore,
         antiSpoofPassed: faceData.antiSpoofing.isLive,
@@ -977,7 +1004,11 @@ export const MobileApp: React.FC = () => {
 
       if (res.success && res.status !== 'REJECTED') {
         playAudioFeedback('SUCCESS');
-        showToast(res.status === 'LATE' ? '⚠️ Attendance Recorded (Late)' : '🎉 Attendance Marked Successfully (QR + Face ID)!');
+        if (res.punchType === 'CHECK_OUT' || res.status === 'CHECKED_OUT') {
+          showToast(`👋 Office Departure Recorded (Check-Out)! Total: ${res.workDurationMinutes ? Math.floor(res.workDurationMinutes / 60) + 'h ' + (res.workDurationMinutes % 60) + 'm' : 'Done'}`);
+        } else {
+          showToast(res.status === 'LATE' ? '⚠️ Office Entry Recorded (Late Arrival)' : '🎉 Office Entry Recorded (Check-In)!');
+        }
         fetchMyAttendanceLogs(currentEmp.id);
       } else {
         playAudioFeedback('ALERT');
@@ -1718,16 +1749,88 @@ export const MobileApp: React.FC = () => {
                   </span>
                 </div>
 
+                {/* Live Office Presence Banner */}
+                <div className={`p-4 rounded-2xl border flex items-center justify-between transition-all ${
+                  isInOffice
+                    ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300 shadow-lg shadow-emerald-950/40'
+                    : checkOutLogToday
+                    ? 'bg-purple-950/30 border-purple-500/40 text-purple-300 shadow-lg shadow-purple-950/40'
+                    : 'bg-slate-900/80 border-slate-800 text-slate-400'
+                }`}>
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                      isInOffice ? 'bg-emerald-500/20 text-emerald-400' : checkOutLogToday ? 'bg-purple-500/20 text-purple-400' : 'bg-slate-800 text-slate-400'
+                    }`}>
+                      {isInOffice ? <Building2 className="w-5 h-5 animate-pulse" /> : checkOutLogToday ? <LogOut className="w-5 h-5" /> : <LogIn className="w-5 h-5" />}
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                        {isInOffice ? (
+                          <>
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                            Currently In Office
+                          </>
+                        ) : checkOutLogToday ? (
+                          'Checked Out for the Day'
+                        ) : (
+                          'Not Checked In Yet'
+                        )}
+                      </p>
+                      <p className="text-[11px] text-slate-400">
+                        {isInOffice && checkInLogToday ? (
+                          `Entered at ${new Date(checkInLogToday.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                        ) : checkOutLogToday ? (
+                          `Left at ${new Date(checkOutLogToday.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${
+                            checkOutLogToday.workDurationMinutes
+                              ? ` • Total Worked: ${Math.floor(checkOutLogToday.workDurationMinutes / 60)}h ${checkOutLogToday.workDurationMinutes % 60}m`
+                              : ''
+                          }`
+                        ) : (
+                          'Scan Master QR + Face ID to enter'
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Primary Touchless Attendance Action Card (Dual Factor: QR + Face ID) */}
-                <div className="p-5 rounded-2xl bg-gradient-to-b from-emerald-950/40 via-slate-900 to-slate-950 border border-emerald-500/30 text-center space-y-4 shadow-xl">
-                  <div className="w-16 h-16 mx-auto rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-300 shadow-inner">
-                    <QrCode className="w-8 h-8 animate-pulse text-emerald-400" />
+                <div className={`p-5 rounded-2xl border text-center space-y-4 shadow-xl transition-all ${
+                  punchType === 'CHECK_OUT'
+                    ? 'bg-gradient-to-b from-purple-950/40 via-slate-900 to-slate-950 border-purple-500/30'
+                    : 'bg-gradient-to-b from-emerald-950/40 via-slate-900 to-slate-950 border-emerald-500/30'
+                }`}>
+                  {/* Punch Type Mode Toggle */}
+                  <div className="grid grid-cols-2 p-1 bg-slate-950/80 rounded-xl border border-slate-800 text-xs font-semibold">
+                    <button
+                      onClick={() => setPunchType('CHECK_IN')}
+                      className={`py-2 rounded-lg flex items-center justify-center gap-1.5 transition ${
+                        punchType === 'CHECK_IN'
+                          ? 'bg-emerald-600 text-white shadow-md'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <LogIn className="w-3.5 h-3.5" />
+                      Office Entry
+                    </button>
+                    <button
+                      onClick={() => setPunchType('CHECK_OUT')}
+                      className={`py-2 rounded-lg flex items-center justify-center gap-1.5 transition ${
+                        punchType === 'CHECK_OUT'
+                          ? 'bg-purple-600 text-white shadow-md'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      Office Exit
+                    </button>
                   </div>
 
                   <div className="space-y-1">
-                    <h3 className="font-bold text-white text-base">Office Dual-Factor Attendance</h3>
+                    <h3 className="font-bold text-white text-base">
+                      {punchType === 'CHECK_OUT' ? 'Office Departure Punch' : 'Office Entry Punch'}
+                    </h3>
                     <p className="text-xs text-slate-400 max-w-xs mx-auto">
-                      Step 1: Scan Office Master QR Poster ➔ Step 2: Instant Biometric Face ID Verification.
+                      Step 1: Scan Master QR ➔ Step 2: 90s Biometric Face ID Verification.
                     </p>
                   </div>
 
@@ -1746,10 +1849,14 @@ export const MobileApp: React.FC = () => {
                       setFacingMode('environment'); // default to rear camera for wall poster
                       setIsAttendanceCameraActive(true);
                     }}
-                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-sm shadow-lg shadow-emerald-500/30 transition flex items-center justify-center gap-2 active:scale-95"
+                    className={`w-full py-3.5 rounded-xl font-bold text-sm shadow-lg transition flex items-center justify-center gap-2 active:scale-95 text-white ${
+                      punchType === 'CHECK_OUT'
+                        ? 'bg-gradient-to-r from-purple-600 to-rose-600 hover:from-purple-500 hover:to-rose-500 shadow-purple-600/30'
+                        : 'bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 shadow-emerald-500/30'
+                    }`}
                   >
-                    <Scan className="w-5 h-5" />
-                    Mark Attendance (QR ➔ Face ID)
+                    {punchType === 'CHECK_OUT' ? <LogOut className="w-5 h-5" /> : <LogIn className="w-5 h-5" />}
+                    {punchType === 'CHECK_OUT' ? 'Clock Out (Office Exit)' : 'Clock In (Office Entry)'}
                   </button>
                 </div>
 
@@ -1811,10 +1918,16 @@ export const MobileApp: React.FC = () => {
                             </div>
                           </div>
                           <div className="text-right space-y-1">
-                            <StatusBadge status={log.status || 'PRESENT'} />
-                            <p className="text-[10px] text-emerald-400 font-mono">
-                              {((log.faceSimilarityScore ?? 0.98) * 100).toFixed(1)}% Match
-                            </p>
+                            <StatusBadge status={log.status || 'PRESENT'} punchType={log.punchType} />
+                            {log.workDurationMinutes ? (
+                              <p className="text-[10px] text-purple-300 font-mono font-semibold">
+                                {Math.floor(log.workDurationMinutes / 60)}h {log.workDurationMinutes % 60}m worked
+                              </p>
+                            ) : (
+                              <p className="text-[10px] text-emerald-400 font-mono">
+                                {((log.faceSimilarityScore ?? 0.98) * 100).toFixed(1)}% Match
+                              </p>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -1886,14 +1999,16 @@ export const MobileApp: React.FC = () => {
                               <span className="text-emerald-400 font-semibold">
                                 Match: {((log.faceSimilarityScore ?? 0.98) * 100).toFixed(1)}%
                               </span>
-                              {log.livenessScore && (
-                                <span>• Live: {((log.livenessScore ?? 0.95) * 100).toFixed(0)}%</span>
+                              {log.workDurationMinutes && (
+                                <span className="text-purple-300 font-semibold">
+                                  • {Math.floor(log.workDurationMinutes / 60)}h {log.workDurationMinutes % 60}m
+                                </span>
                               )}
                             </div>
                           </div>
                         </div>
                         <div className="text-right">
-                          <StatusBadge status={log.status || 'PRESENT'} />
+                          <StatusBadge status={log.status || 'PRESENT'} punchType={log.punchType} />
                         </div>
                       </div>
                     ))}
@@ -2126,10 +2241,20 @@ export const MobileApp: React.FC = () => {
           <div className="space-y-3">
             <div className="flex items-center justify-between text-white">
               <div>
-                <h3 className="font-bold text-sm">Office Dual-Factor Attendance</h3>
+                <h3 className="font-bold text-sm flex items-center gap-1.5">
+                  {punchType === 'CHECK_OUT' ? (
+                    <span className="text-purple-400 flex items-center gap-1">
+                      <LogOut className="w-4 h-4" /> Office Departure (Check-Out)
+                    </span>
+                  ) : (
+                    <span className="text-emerald-400 flex items-center gap-1">
+                      <LogIn className="w-4 h-4" /> Office Entry (Check-In)
+                    </span>
+                  )}
+                </h3>
                 <p className="text-[11px] text-slate-400">
                   {attendanceStep === 'QR_SCAN'
-                    ? 'Step 1 of 2: Scan Office Master QR Poster'
+                    ? 'Step 1 of 2: Scan Master QR Poster on wall'
                     : 'Step 2 of 2: Facial Biometric Identification'}
                 </p>
               </div>
@@ -2445,9 +2570,11 @@ export const MobileApp: React.FC = () => {
             <div className="space-y-1">
               <h3 className="text-lg font-bold text-white">
                 {verifyResult.success
-                  ? verifyResult.status === 'LATE'
-                    ? 'Attendance Marked (Late)'
-                    : 'Attendance Verified (Present)'
+                  ? verifyResult.punchType === 'CHECK_OUT' || verifyResult.status === 'CHECKED_OUT'
+                    ? 'Office Departure Recorded (Check-Out)'
+                    : verifyResult.status === 'LATE'
+                    ? 'Office Entry Recorded (Late Arrival)'
+                    : 'Office Entry Recorded (Check-In)'
                   : 'Verification Rejected'}
               </h3>
               <p className="text-xs text-slate-400">{verifyResult.message}</p>
@@ -2456,6 +2583,14 @@ export const MobileApp: React.FC = () => {
             {/* Metrics Breakdown */}
             {verifyResult.details && (
               <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2 text-xs text-left">
+                {verifyResult.workDurationMinutes != null && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Total Work Duration</span>
+                    <span className="text-purple-300 font-mono font-bold">
+                      {Math.floor(verifyResult.workDurationMinutes / 60)}h {verifyResult.workDurationMinutes % 60}m
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-slate-400">ArcFace Similarity</span>
                   <span className="text-emerald-400 font-mono font-semibold">

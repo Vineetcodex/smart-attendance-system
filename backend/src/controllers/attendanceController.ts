@@ -54,6 +54,7 @@ export class AttendanceController {
         employeeId,
         qrPayload,
         qrScannedAt,
+        punchType: requestedPunchType,
         faceEmbedding,
         livenessScore = 0.95,
         antiSpoofPassed = true,
@@ -125,7 +126,6 @@ export class AttendanceController {
       // -------------------------------------------------------------
       let isQrValid = true;
       let qrError = '';
-      let verificationMethod: 'DUAL_QR_FACE' | 'FACE_BIOMETRIC' = 'FACE_BIOMETRIC';
 
       if (qrPayload && qrPayload.trim() !== '') {
         const qrResult = QrService.verifyMasterPayload(qrPayload, org.id);
@@ -142,10 +142,6 @@ export class AttendanceController {
                 qrError = `QR Code scan session expired (${Math.round(elapsedMs / 1000)}s elapsed, maximum allowed is 90s). Please re-scan the Master QR code.`;
               }
             }
-          }
-
-          if (isQrValid) {
-            verificationMethod = 'DUAL_QR_FACE';
           }
         } else {
           qrError = qrResult.error || 'Invalid Master QR Code.';
@@ -196,14 +192,53 @@ export class AttendanceController {
       // Determine Overall Outcome: QR (if scanned) AND Face match AND Anti-Spoofing Liveness must pass
       const isBiometricPass = isQrValid && faceResult.isMatch && isLivenessValid;
 
-      // Check shift lateness (Flexible 24x7 schedule has no time restrictions)
+      // -------------------------------------------------------------
+      // DUAL PUNCH LOGIC: CHECK-IN (ENTRY) VS CHECK-OUT (EXIT)
+      // -------------------------------------------------------------
       const now = capturedAt ? new Date(capturedAt) : new Date();
+      const todayDateStr = now.toISOString().split('T')[0];
+
+      // Retrieve today's valid logs for this employee
+      const todayLogs = db.getAttendanceLogs({
+        employeeId: employee.id,
+        startDate: `${todayDateStr}T00:00:00.000Z`,
+        endDate: `${todayDateStr}T23:59:59.999Z`,
+      }).filter((l) => l.status !== 'REJECTED');
+
+      let punchType: 'CHECK_IN' | 'CHECK_OUT' = 'CHECK_IN';
+      if (requestedPunchType === 'CHECK_IN' || requestedPunchType === 'CHECK_OUT') {
+        punchType = requestedPunchType;
+      } else {
+        // Auto-detect punch type based on previous punch today
+        if (todayLogs.length > 0) {
+          const lastPunch = todayLogs[0]; // sorted latest first
+          punchType = (lastPunch.punchType === 'CHECK_IN' || lastPunch.status === 'PRESENT' || lastPunch.status === 'LATE')
+            ? 'CHECK_OUT'
+            : 'CHECK_IN';
+        }
+      }
+
+      // Calculate working hours if checking out
+      let workDurationMinutes: number | undefined = undefined;
+      if (punchType === 'CHECK_OUT' && todayLogs.length > 0) {
+        const checkInLog = [...todayLogs].reverse().find(
+          (l) => l.punchType === 'CHECK_IN' || l.status === 'PRESENT' || l.status === 'LATE'
+        );
+        if (checkInLog) {
+          const checkInTime = new Date(checkInLog.timestamp).getTime();
+          const diffMs = Math.max(0, now.getTime() - checkInTime);
+          workDurationMinutes = Math.round(diffMs / (1000 * 60));
+        }
+      }
+
+      // Check shift lateness for Check-In (Flexible 24x7 schedule has no time restrictions)
       const currentHour = now.getHours();
       const currentMinute = now.getMinutes();
 
       let isLate = false;
       const shift = employee.shiftStart || 'Flexible 24x7';
       if (
+        punchType === 'CHECK_IN' &&
         shift !== 'Flexible 24x7' &&
         shift !== 'FLEXIBLE' &&
         shift.includes(':')
@@ -214,11 +249,14 @@ export class AttendanceController {
         }
       }
 
-      const status: 'PRESENT' | 'LATE' | 'REJECTED' = isBiometricPass
-        ? isLate
-          ? 'LATE'
-          : 'PRESENT'
-        : 'REJECTED';
+      let status: 'PRESENT' | 'LATE' | 'CHECKED_OUT' | 'REJECTED' = 'REJECTED';
+      if (isBiometricPass) {
+        if (punchType === 'CHECK_OUT') {
+          status = 'CHECKED_OUT';
+        } else {
+          status = isLate ? 'LATE' : 'PRESENT';
+        }
+      }
 
       const failureReasons: string[] = [];
       if (!isQrValid) failureReasons.push(qrError);
@@ -236,6 +274,8 @@ export class AttendanceController {
         department: employee.department,
         orgId: org.id,
         timestamp: now.toISOString(),
+        punchType,
+        workDurationMinutes,
         status,
         qrMatchStatus: isQrValid,
         faceSimilarityScore: faceResult.similarityScore,
@@ -258,6 +298,7 @@ export class AttendanceController {
         return res.status(422).json({
           success: false,
           status: 'REJECTED',
+          punchType,
           message: 'Biometric face verification failed.',
           details: {
             facePassed: faceResult.isMatch,
@@ -268,22 +309,41 @@ export class AttendanceController {
             livenessError: isLivenessValid ? undefined : livenessError,
             geofencePassed: geoResult.isInside,
             distanceMeters: geoResult.distanceMeters,
+            geofenceError: geoResult.isInside ? undefined : geoResult.error,
+            qrPassed: isQrValid,
+            qrError: isQrValid ? undefined : qrError,
+            failureReason: failureSummary,
+            timestamp: log.timestamp,
           },
           log,
         });
       }
 
+      let successMessage = 'Attendance Verified Successfully!';
+      if (punchType === 'CHECK_OUT') {
+        const hours = workDurationMinutes ? Math.floor(workDurationMinutes / 60) : 0;
+        const mins = workDurationMinutes ? workDurationMinutes % 60 : 0;
+        successMessage = `Office Departure Marked (Check-Out)! Total Worked: ${hours}h ${mins}m. Have a great evening!`;
+      } else if (status === 'LATE') {
+        successMessage = 'Office Entry Marked (Check-In - Late Arrival). Welcome!';
+      } else {
+        successMessage = 'Office Entry Marked (Check-In - Present on Time). Welcome!';
+      }
+
       return res.status(200).json({
         success: true,
         status,
-        message: status === 'LATE' ? 'Attendance marked (Late Arrival).' : 'Attendance marked successfully (Present).',
+        punchType,
+        workDurationMinutes,
+        message: successMessage,
         details: {
           facePassed: true,
           faceSimilarityScore: faceResult.similarityScore,
           livenessPassed: true,
           livenessScore: livenessScoreNum,
-          geofencePassed: geoResult.isInside,
+          geofencePassed: true,
           distanceMeters: geoResult.distanceMeters,
+          qrPassed: true,
           timestamp: log.timestamp,
         },
         log,

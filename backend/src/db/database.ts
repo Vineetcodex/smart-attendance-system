@@ -45,7 +45,9 @@ export interface AttendanceLog {
   department: string;
   orgId: string;
   timestamp: string;
-  status: 'PRESENT' | 'LATE' | 'REJECTED';
+  punchType?: 'CHECK_IN' | 'CHECK_OUT';
+  workDurationMinutes?: number;
+  status: 'PRESENT' | 'LATE' | 'CHECKED_OUT' | 'REJECTED';
   faceSimilarityScore: number; // e.g. 0.94 (94%)
   livenessScore?: number; // e.g. 0.98 (98%)
   antiSpoofPassed?: boolean;
@@ -259,6 +261,25 @@ class DatabaseManager {
     const totalEmployees = activeEmployees.length;
     const absentCount = Math.max(0, totalEmployees - (presentCount + lateCount));
 
+    // In-Office tracking: determine if employee's most recent valid punch today is CHECK_IN
+    const employeeLatestPunch: Record<string, string> = {};
+    // Sort chronological to get most recent state
+    const sortedTodayLogs = [...todayLogs].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+    for (const log of sortedTodayLogs) {
+      if (log.status !== 'REJECTED') {
+        employeeLatestPunch[log.employeeId] = log.punchType || (log.status === 'CHECKED_OUT' ? 'CHECK_OUT' : 'CHECK_IN');
+      }
+    }
+    const inOfficeCount = Object.values(employeeLatestPunch).filter((p) => p === 'CHECK_IN').length;
+    const checkedInCount = todayLogs.filter(
+      (l) => (l.punchType === 'CHECK_IN' || (!l.punchType && l.status !== 'REJECTED')) && l.status !== 'REJECTED'
+    ).length;
+    const checkedOutCount = todayLogs.filter(
+      (l) => (l.punchType === 'CHECK_OUT' || l.status === 'CHECKED_OUT') && l.status !== 'REJECTED'
+    ).length;
+
     // Avg confidence
     const validLogs = todayLogs.filter((l) => l.status !== 'REJECTED');
     const avgConfidence =
@@ -268,6 +289,9 @@ class DatabaseManager {
 
     return {
       totalEmployees,
+      inOfficeCount,
+      checkedInToday: checkedInCount,
+      checkedOutToday: checkedOutCount,
       presentToday: presentCount,
       lateToday: lateCount,
       absentToday: absentCount,

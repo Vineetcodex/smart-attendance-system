@@ -114,7 +114,9 @@ export interface AttendanceLog {
   department: string;
   orgId: string;
   timestamp: string;
-  status: 'PRESENT' | 'LATE' | 'REJECTED' | 'EARLY_DEPARTURE' | 'SUSPICIOUS_PROXIMITY';
+  punchType?: 'CHECK_IN' | 'CHECK_OUT';
+  workDurationMinutes?: number;
+  status: 'PRESENT' | 'LATE' | 'CHECKED_OUT' | 'REJECTED' | 'EARLY_DEPARTURE' | 'SUSPICIOUS_PROXIMITY';
   qrMatchStatus?: boolean;
   faceSimilarityScore: number;
   livenessScore?: number;
@@ -131,6 +133,9 @@ export interface AttendanceLog {
 
 export interface AttendanceStats {
   totalEmployees: number;
+  inOfficeCount?: number;
+  checkedInToday?: number;
+  checkedOutToday?: number;
   presentToday: number;
   lateToday: number;
   rejectedToday: number;
@@ -498,6 +503,7 @@ export const api = {
     employeeId: string;
     qrPayload?: string;
     qrScannedAt?: number;
+    punchType?: 'CHECK_IN' | 'CHECK_OUT';
     faceEmbedding: number[];
     livenessScore?: number;
     antiSpoofPassed?: boolean;
@@ -566,20 +572,50 @@ export const api = {
 
       const isBiometricPass = isQrTimeValid && bestMatch.isMatch && (payload.antiSpoofPassed !== false);
 
-      // Check shift lateness
+      const logs: AttendanceLog[] = JSON.parse(localStorage.getItem('local_attendance_logs') || '[]');
       const now = payload.capturedAt ? new Date(payload.capturedAt) : new Date();
+      const todayStr = now.toISOString().split('T')[0];
+
+      // Retrieve previous logs today for offline punchType auto-detection
+      const todayLogs = logs.filter(
+        (l) => l.employeeId === emp.id && l.timestamp.startsWith(todayStr) && l.status !== 'REJECTED'
+      );
+
+      let punchType: 'CHECK_IN' | 'CHECK_OUT' = payload.punchType || 'CHECK_IN';
+      if (!payload.punchType && todayLogs.length > 0) {
+        const last = todayLogs[0];
+        punchType = (last.punchType === 'CHECK_IN' || last.status === 'PRESENT' || last.status === 'LATE')
+          ? 'CHECK_OUT'
+          : 'CHECK_IN';
+      }
+
+      let workDurationMinutes: number | undefined = undefined;
+      if (punchType === 'CHECK_OUT' && todayLogs.length > 0) {
+        const checkInLog = [...todayLogs].reverse().find(
+          (l) => l.punchType === 'CHECK_IN' || l.status === 'PRESENT' || l.status === 'LATE'
+        );
+        if (checkInLog) {
+          const diffMs = Math.max(0, now.getTime() - new Date(checkInLog.timestamp).getTime());
+          workDurationMinutes = Math.round(diffMs / (1000 * 60));
+        }
+      }
+
+      // Check shift lateness
       const currentHour = now.getHours();
       const currentMinute = now.getMinutes();
       let isLate = false;
       const shift = emp.shiftStart || 'Flexible 24x7';
-      if (shift && shift.includes(':')) {
+      if (punchType === 'CHECK_IN' && shift && shift.includes(':')) {
         const [shiftH, shiftM] = shift.split(':').map((s) => parseInt(s, 10));
         if (!isNaN(shiftH) && !isNaN(shiftM)) {
           isLate = currentHour > shiftH || (currentHour === shiftH && currentMinute > shiftM + 15);
         }
       }
 
-      const status = isBiometricPass ? (isLate ? 'LATE' : 'PRESENT') : 'REJECTED';
+      let status: 'PRESENT' | 'LATE' | 'CHECKED_OUT' | 'REJECTED' = 'REJECTED';
+      if (isBiometricPass) {
+        status = punchType === 'CHECK_OUT' ? 'CHECKED_OUT' : (isLate ? 'LATE' : 'PRESENT');
+      }
 
       const newLog: AttendanceLog = {
         id: 'log_local_' + Date.now(),
@@ -589,6 +625,8 @@ export const api = {
         department: emp.department || 'Engineering',
         orgId: 'org_drp_tech_hq',
         timestamp: now.toISOString(),
+        punchType,
+        workDurationMinutes,
         status,
         qrMatchStatus: true,
         faceSimilarityScore: bestMatch.similarity,
@@ -603,7 +641,6 @@ export const api = {
         verificationMethod: payload.qrPayload ? 'DUAL_QR_FACE' : 'FACIAL_BIOMETRIC',
       };
 
-      const logs: AttendanceLog[] = JSON.parse(localStorage.getItem('local_attendance_logs') || '[]');
       logs.unshift(newLog);
       localStorage.setItem('local_attendance_logs', JSON.stringify(logs));
 
@@ -611,6 +648,7 @@ export const api = {
         return {
           success: false,
           status: 'REJECTED',
+          punchType,
           message: 'Biometric face verification failed (Facial mismatch with enrolled profile).',
           details: {
             facePassed: false,
@@ -623,10 +661,23 @@ export const api = {
         };
       }
 
+      let msg = 'Attendance Marked Successfully (Present)!';
+      if (punchType === 'CHECK_OUT') {
+        const h = workDurationMinutes ? Math.floor(workDurationMinutes / 60) : 0;
+        const m = workDurationMinutes ? workDurationMinutes % 60 : 0;
+        msg = `Office Departure Marked (Check-Out)! Total: ${h}h ${m}m. Have a great evening!`;
+      } else if (status === 'LATE') {
+        msg = 'Office Entry Marked (Check-In - Late Arrival). Welcome!';
+      } else {
+        msg = 'Office Entry Marked (Check-In - Present on Time). Welcome!';
+      }
+
       return {
         success: true,
         status,
-        message: status === 'LATE' ? 'Attendance Marked (Late Arrival).' : 'Attendance Marked Successfully (Present)!',
+        punchType,
+        workDurationMinutes,
+        message: msg,
         details: {
           facePassed: true,
           faceSimilarityScore: bestMatch.similarity,
