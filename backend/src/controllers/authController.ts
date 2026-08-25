@@ -85,6 +85,31 @@ export class AuthController {
         return res.status(401).json({ success: false, message: 'Invalid credentials.' });
       }
 
+      // Check Admin Approval Status
+      if (employee.approvalStatus === 'REJECTED') {
+        return res.status(403).json({
+          success: false,
+          isRejected: true,
+          approvalStatus: 'REJECTED',
+          message: employee.rejectionReason || 'Your registration was rejected by the administrator.',
+        });
+      }
+
+      if (employee.approvalStatus === 'PENDING' || employee.isApproved === false) {
+        const { passwordHash: _, ...sanitizedEmployee } = employee;
+        return res.status(403).json({
+          success: false,
+          isPendingApproval: true,
+          approvalStatus: 'PENDING',
+          message: 'Your registration is pending administrator approval. Please wait for an admin to review and approve your account.',
+          data: {
+            employee: sanitizedEmployee,
+            isPendingApproval: true,
+            approvalStatus: 'PENDING',
+          },
+        });
+      }
+
       const token = jwt.sign(
         {
           id: employee.id,
@@ -180,9 +205,10 @@ export class AuthController {
           ? multiPoseVectors[0]
           : FaceService.generateEmbeddingFromSeed(`${code}-${fullName}`);
 
-      // If already exists, update & log in directly
+      // If already exists, update profile
       const existingEmp = db.getEmployeeByCode(code) || db.getEmployeeByEmail(email);
       if (existingEmp) {
+        const isAlreadyApproved = existingEmp.isApproved !== false && existingEmp.approvalStatus !== 'PENDING' && existingEmp.approvalStatus !== 'REJECTED';
         const updated = db.updateEmployee(existingEmp.id, {
           fullName: fullName.trim(),
           email: email.toLowerCase().trim(),
@@ -196,6 +222,24 @@ export class AuthController {
           department: (department || 'Engineering').trim(),
           position: (position || 'Software Engineer').trim(),
         });
+
+        const empData = updated || existingEmp;
+        const { passwordHash: _, ...sanitized } = empData;
+
+        if (!isAlreadyApproved) {
+          return res.status(200).json({
+            success: true,
+            isPendingApproval: true,
+            approvalStatus: 'PENDING',
+            message: 'Profile updated. Waiting for admin approval.',
+            data: {
+              employee: sanitized,
+              isPendingApproval: true,
+              approvalStatus: 'PENDING',
+              organization: org,
+            },
+          });
+        }
 
         const token = jwt.sign(
           {
@@ -215,7 +259,7 @@ export class AuthController {
           message: 'Account and Face ID updated successfully!',
           data: {
             token,
-            employee: updated || existingEmp,
+            employee: sanitized,
             organization: org,
           },
         });
@@ -254,6 +298,8 @@ export class AuthController {
         faceEmbeddings: multiPoseVectors,
         photoUrl: photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(fullName)}`,
         isActive: true,
+        isApproved: false,
+        approvalStatus: 'PENDING' as const,
         shiftStart,
         shiftEnd,
         createdAt: new Date().toISOString(),
@@ -262,27 +308,17 @@ export class AuthController {
 
       db.createEmployee(newEmployee);
 
-      const token = jwt.sign(
-        {
-          id: newEmployee.id,
-          email: newEmployee.email,
-          employeeCode: newEmployee.employeeCode,
-          role: 'EMPLOYEE',
-          orgId: newEmployee.orgId,
-          fullName: newEmployee.fullName,
-        },
-        config.jwtSecret,
-        { expiresIn: '30d' }
-      );
-
       const { passwordHash: _, ...sanitized } = newEmployee;
 
       return res.status(201).json({
         success: true,
-        message: 'Face ID registered and account created successfully!',
+        isPendingApproval: true,
+        approvalStatus: 'PENDING',
+        message: 'Registration successful! Your profile has been submitted and is currently waiting for admin approval.',
         data: {
-          token,
           employee: sanitized,
+          isPendingApproval: true,
+          approvalStatus: 'PENDING',
           organization: org,
         },
       });
@@ -342,6 +378,44 @@ export class AuthController {
       const admin = db.getAdminByEmail(req.user.email);
       const org = db.getPrimaryOrganization();
       return res.json({ success: true, data: { user: admin, organization: org, role: req.user.role } });
+    }
+  }
+
+  /**
+   * Check current approval status of an employee by Code or ID (Public / Self-Check)
+   */
+  static async checkApprovalStatus(req: Request, res: Response) {
+    try {
+      const { idOrCode } = req.params;
+      if (!idOrCode) {
+        return res.status(400).json({ success: false, message: 'Employee ID or Code is required.' });
+      }
+      let emp = db.getEmployeeById(idOrCode) || db.getEmployeeByCode(idOrCode) || db.getEmployeeByEmail(idOrCode);
+      if (!emp) {
+        return res.status(404).json({ success: false, message: 'Employee not found.' });
+      }
+
+      const isApproved = emp.isApproved !== false && emp.approvalStatus !== 'PENDING' && emp.approvalStatus !== 'REJECTED';
+      const status = emp.approvalStatus || (isApproved ? 'APPROVED' : 'PENDING');
+      const { passwordHash: _, ...sanitized } = emp;
+
+      return res.json({
+        success: true,
+        isApproved,
+        approvalStatus: status,
+        approvedAt: emp.approvedAt,
+        approvedBy: emp.approvedBy,
+        rejectionReason: emp.rejectionReason,
+        employee: sanitized,
+        message: isApproved
+          ? 'Account is approved. You can sign in and mark attendance.'
+          : status === 'REJECTED'
+          ? emp.rejectionReason || 'Registration was rejected by administrator.'
+          : 'Account is pending administrator approval.',
+      });
+    } catch (err: any) {
+      console.error('Check approval status error:', err);
+      return res.status(500).json({ success: false, message: err.message });
     }
   }
 }

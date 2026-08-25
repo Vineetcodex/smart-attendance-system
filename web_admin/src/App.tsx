@@ -5,6 +5,7 @@ import { Navbar } from './components/Navbar.js';
 import { Dashboard } from './pages/Dashboard.js';
 import { OrgSettings } from './pages/OrgSettings.js';
 import { Employees } from './pages/Employees.js';
+import { Approvals } from './pages/Approvals.js';
 import { Reports } from './pages/Reports.js';
 import { Simulator } from './pages/Simulator.js';
 import { Login } from './pages/Login.js';
@@ -31,11 +32,12 @@ const AdminLayout: React.FC<{
         <main className="flex-1 overflow-y-auto">
           <Routes>
             <Route path="/" element={<Dashboard org={org} />} />
+            <Route path="/approvals" element={<Approvals />} />
+            <Route path="/employees" element={<Employees />} />
             <Route
               path="/org-settings"
               element={<OrgSettings org={org} onOrgUpdated={setOrg} />}
             />
-            <Route path="/employees" element={<Employees />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/simulator" element={<Simulator org={org} />} />
             <Route path="*" element={<Navigate to="/admin" replace />} />

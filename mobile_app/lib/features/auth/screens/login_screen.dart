@@ -70,16 +70,26 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => HomeScreen(employee: employee)),
         );
+      } else if (response.data['isPendingApproval'] == true) {
+        setState(() {
+          _errorMessage = '⏳ Account Pending Approval: Your registration is awaiting administrator review.';
+        });
       } else {
         setState(() {
           _errorMessage = response.data['message'] ?? 'Authentication failed';
         });
       }
     } on DioException catch (e) {
-      setState(() {
-        _errorMessage = e.response?.data?['message'] ??
-            'Connection failed. Check server address: ${_serverUrlController.text}';
-      });
+      if (e.response?.data?['isPendingApproval'] == true) {
+        setState(() {
+          _errorMessage = '⏳ Account Pending Approval: You have successfully registered. Please wait for an administrator to approve your account before signing in.';
+        });
+      } else {
+        setState(() {
+          _errorMessage = e.response?.data?['message'] ??
+              'Connection failed. Check server address: ${_serverUrlController.text}';
+        });
+      }
     } catch (e) {
       setState(() {
         _errorMessage = 'Error: $e';

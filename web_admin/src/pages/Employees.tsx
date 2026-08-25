@@ -78,6 +78,8 @@ export const Employees: React.FC = () => {
         shiftEnd,
         photoUrl: photoUrl || undefined,
         faceEmbedding: faceEmbedding,
+        isApproved: true,
+        approvalStatus: 'APPROVED',
       });
       setIsAddModalOpen(false);
       resetForm();
@@ -203,7 +205,7 @@ export const Employees: React.FC = () => {
                     />
                     <div>
                       <h4 className="font-semibold text-white text-sm">{emp.fullName}</h4>
-                      <p className="text-xs font-mono text-emerald-400">{emp.employeeCode}</p>
+                      <p className="text-xs font-mono text-emerald-400 font-semibold">{emp.employeeCode}</p>
                     </div>
                   </div>
 

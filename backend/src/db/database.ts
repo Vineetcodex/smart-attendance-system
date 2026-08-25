@@ -32,6 +32,11 @@ export interface Employee {
   faceEmbeddings?: number[][]; // Multi-pose ArcFace vectors (Straight, Left, Right)
   photoUrl?: string;
   isActive: boolean;
+  isApproved?: boolean;
+  approvalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  approvedAt?: string;
+  approvedBy?: string;
+  rejectionReason?: string;
   shiftStart?: string; // e.g. "09:00"
   shiftEnd?: string;   // e.g. "18:00"
   createdAt: string;
@@ -105,6 +110,20 @@ class DatabaseManager {
       try {
         const raw = fs.readFileSync(this.dbPath, 'utf-8');
         this.data = JSON.parse(raw);
+        // Default existing pre-seeded employees to approved
+        if (Array.isArray(this.data.employees)) {
+          let updated = false;
+          for (const emp of this.data.employees) {
+            if (emp.approvalStatus === undefined) {
+              emp.isApproved = true;
+              emp.approvalStatus = 'APPROVED';
+              updated = true;
+            }
+          }
+          if (updated) {
+            this.save();
+          }
+        }
       } catch (err) {
         console.error('Error loading database file, initializing empty state:', err);
       }
@@ -154,6 +173,12 @@ class DatabaseManager {
     return this.data.employees;
   }
 
+  getPendingEmployees(orgId?: string): Employee[] {
+    return this.getEmployees(orgId).filter(
+      (e) => e.approvalStatus === 'PENDING' || e.isApproved === false
+    );
+  }
+
   getEmployeeById(id: string): Employee | undefined {
     return this.data.employees.find((e) => e.id === id);
   }
@@ -167,14 +192,19 @@ class DatabaseManager {
   }
 
   createEmployee(employee: Employee): Employee {
+    if (employee.approvalStatus === undefined) {
+      employee.approvalStatus = employee.isApproved ? 'APPROVED' : 'PENDING';
+    }
     this.data.employees.push(employee);
     this.save();
     supabaseDb.upsertEmployee(employee).catch((e) => console.warn('Supabase sync employee error:', e));
     return employee;
   }
 
-  updateEmployee(id: string, updates: Partial<Employee>): Employee | undefined {
-    const idx = this.data.employees.findIndex((e) => e.id === id);
+  updateEmployee(idOrCode: string, updates: Partial<Employee>): Employee | undefined {
+    const idx = this.data.employees.findIndex(
+      (e) => e.id === idOrCode || e.employeeCode.toLowerCase() === idOrCode.toLowerCase()
+    );
     if (idx >= 0) {
       this.data.employees[idx] = {
         ...this.data.employees[idx],
@@ -188,9 +218,29 @@ class DatabaseManager {
     return undefined;
   }
 
-  deleteEmployee(id: string): boolean {
+  approveEmployee(idOrCode: string, adminName?: string): Employee | undefined {
+    return this.updateEmployee(idOrCode, {
+      isApproved: true,
+      approvalStatus: 'APPROVED',
+      approvedAt: new Date().toISOString(),
+      approvedBy: adminName || 'Admin',
+      isActive: true,
+    });
+  }
+
+  rejectEmployee(idOrCode: string, reason?: string): Employee | undefined {
+    return this.updateEmployee(idOrCode, {
+      isApproved: false,
+      approvalStatus: 'REJECTED',
+      rejectionReason: reason || 'Registration rejected by administrator.',
+    });
+  }
+
+  deleteEmployee(idOrCode: string): boolean {
     const initialLen = this.data.employees.length;
-    this.data.employees = this.data.employees.filter((e) => e.id !== id);
+    this.data.employees = this.data.employees.filter(
+      (e) => e.id !== idOrCode && e.employeeCode.toLowerCase() !== idOrCode.toLowerCase()
+    );
     if (this.data.employees.length !== initialLen) {
       this.save();
       return true;

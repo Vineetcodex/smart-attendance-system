@@ -25,20 +25,23 @@ export const getApiBase = (): string => {
     // Check if running inside Capacitor Android APK
     const isCapacitor =
       (window as any).Capacitor !== undefined ||
-      window.location.protocol === 'capacitor:' ||
-      (window.location.protocol === 'https:' && (host === 'localhost' || !host));
+      window.location.protocol === 'capacitor:';
 
     if (isCapacitor) {
       // Default to 24/7 Global Cloud Backend on Render (works on 5G/4G mobile data & any Wi-Fi)
       return 'https://smart-attendance-system-sdnf.onrender.com/api/v1';
     }
 
-    if (host && host !== 'localhost' && host !== '127.0.0.1') {
+    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') {
+      return 'http://localhost:5000/api/v1';
+    }
+
+    if (host && host.trim() !== '') {
       return `http://${host}:5000/api/v1`;
     }
   }
 
-  return 'https://smart-attendance-system-sdnf.onrender.com/api/v1';
+  return 'http://localhost:5000/api/v1';
 };
 
 export const setApiBase = (url: string) => {
@@ -102,6 +105,11 @@ export interface Employee {
   faceEmbeddings?: number[][];
   photoUrl?: string;
   isActive: boolean;
+  isApproved?: boolean;
+  approvalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  approvedAt?: string;
+  approvedBy?: string;
+  rejectionReason?: string;
   shiftStart?: string;
   shiftEnd?: string;
   createdAt: string;
@@ -288,13 +296,39 @@ export const api = {
       }
       return res.data;
     } catch (err: any) {
+      if (err.response?.data?.isPendingApproval || err.response?.data?.isRejected) {
+        return err.response.data;
+      }
+
       console.warn('Backend login unreachable or failed, checking local storage database...');
-      const localEmployees: any[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
+      const localEmployees: Employee[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
       const identifier = employeeCode.trim().toUpperCase();
       const found = localEmployees.find(
-        (e) => e.employeeCode === identifier || e.email?.toUpperCase() === identifier
+        (e) => e.employeeCode.toUpperCase() === identifier || e.email.toUpperCase() === identifier
       );
       if (found) {
+        if (found.approvalStatus === 'REJECTED') {
+          return {
+            success: false,
+            isRejected: true,
+            approvalStatus: 'REJECTED',
+            message: found.rejectionReason || 'Registration rejected by administrator.',
+          };
+        }
+        if (found.approvalStatus === 'PENDING' || found.isApproved === false) {
+          return {
+            success: false,
+            isPendingApproval: true,
+            approvalStatus: 'PENDING',
+            message: 'Your registration is pending administrator approval. Please wait for an admin to approve your account.',
+            data: {
+              employee: found,
+              isPendingApproval: true,
+              approvalStatus: 'PENDING',
+            },
+          };
+        }
+
         const dummyToken = 'local_token_' + Date.now();
         localStorage.setItem('employee_token', dummyToken);
         localStorage.setItem('employee_user', JSON.stringify(found));
@@ -358,6 +392,8 @@ export const api = {
           data.photoUrl ||
           `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.fullName.trim())}`,
         isActive: true,
+        isApproved: false,
+        approvalStatus: 'PENDING',
         shiftStart: data.shiftStart || '09:00',
         shiftEnd: data.shiftEnd || '18:00',
         createdAt: new Date().toISOString(),
@@ -374,16 +410,15 @@ export const api = {
       }
       localStorage.setItem('local_employees', JSON.stringify(localEmployees));
 
-      const dummyToken = 'local_token_' + Date.now();
-      localStorage.setItem('employee_token', dummyToken);
-      localStorage.setItem('employee_user', JSON.stringify(newEmp));
-
       return {
         success: true,
-        message: 'Face ID registered and account created successfully!',
+        isPendingApproval: true,
+        approvalStatus: 'PENDING',
+        message: 'Face ID registered and account created successfully! Waiting for admin approval.',
         data: {
-          token: dummyToken,
           employee: newEmp,
+          isPendingApproval: true,
+          approvalStatus: 'PENDING',
           organization: {
             id: 'org_drp_tech_hq',
             name: 'DRP Technology HQ',
@@ -391,6 +426,41 @@ export const api = {
             geofenceRadiusMeters: 50,
           },
         },
+      };
+    }
+  },
+
+  async checkApprovalStatus(idOrCode: string): Promise<{
+    success: boolean;
+    isApproved: boolean;
+    approvalStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
+    employee?: Employee;
+    message?: string;
+    rejectionReason?: string;
+  }> {
+    try {
+      const res = await apiClient.get(`/auth/employee-status/${idOrCode}`);
+      return res.data;
+    } catch {
+      const localEmployees: Employee[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
+      const found = localEmployees.find(
+        (e) => e.id === idOrCode || e.employeeCode.toUpperCase() === idOrCode.toUpperCase() || e.email.toUpperCase() === idOrCode.toUpperCase()
+      );
+      if (found) {
+        const isApproved = found.isApproved !== false && found.approvalStatus !== 'PENDING' && found.approvalStatus !== 'REJECTED';
+        return {
+          success: true,
+          isApproved,
+          approvalStatus: found.approvalStatus || (isApproved ? 'APPROVED' : 'PENDING'),
+          employee: found,
+          message: isApproved ? 'Account approved.' : 'Waiting for admin approval.',
+        };
+      }
+      return {
+        success: false,
+        isApproved: false,
+        approvalStatus: 'PENDING',
+        message: 'Status check offline.',
       };
     }
   },
@@ -462,19 +532,119 @@ export const api = {
   },
 
   // Employees
-  async getEmployees(department?: string): Promise<Employee[]> {
+  async getEmployees(params?: { department?: string; status?: string } | string): Promise<Employee[]> {
     try {
-      const res = await apiClient.get('/employees', { params: { department } });
+      const query = typeof params === 'string' ? { department: params } : params;
+      const res = await apiClient.get('/employees', { params: query });
       return res.data.data;
     } catch {
       const local = localStorage.getItem('local_employees');
-      return local ? JSON.parse(local) : [];
+      const all: Employee[] = local ? JSON.parse(local) : [];
+      const query = typeof params === 'string' ? { department: params } : params;
+      let filtered = all;
+      if (query?.department && query.department !== 'ALL') {
+        filtered = filtered.filter((e) => e.department.toLowerCase() === query.department?.toLowerCase());
+      }
+      if (query?.status && query.status !== 'ALL') {
+        if (query.status === 'PENDING') {
+          filtered = filtered.filter((e) => e.approvalStatus === 'PENDING' || e.isApproved === false);
+        } else if (query.status === 'APPROVED') {
+          filtered = filtered.filter((e) => e.isApproved !== false && e.approvalStatus !== 'PENDING' && e.approvalStatus !== 'REJECTED');
+        } else if (query.status === 'REJECTED') {
+          filtered = filtered.filter((e) => e.approvalStatus === 'REJECTED');
+        }
+      }
+      return filtered;
     }
   },
 
   async createEmployee(data: Partial<Employee>): Promise<Employee> {
-    const res = await apiClient.post('/employees', data);
+    const res = await apiClient.post('/employees', {
+      ...data,
+      isApproved: true,
+      approvalStatus: 'APPROVED',
+    });
     return res.data.data;
+  },
+
+  async getPendingEmployees(): Promise<Employee[]> {
+    try {
+      const res = await apiClient.get('/employees', { params: { status: 'PENDING' } });
+      return res.data.data;
+    } catch {
+      const local = localStorage.getItem('local_employees');
+      const all: Employee[] = local ? JSON.parse(local) : [];
+      return all.filter((e) => e.approvalStatus === 'PENDING' || e.isApproved === false);
+    }
+  },
+
+  async approveEmployee(idOrCode: string): Promise<Employee> {
+    try {
+      const res = await apiClient.post(`/employees/${idOrCode}/approve`);
+      return res.data.data;
+    } catch {
+      const localEmployees: Employee[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
+      const idx = localEmployees.findIndex(
+        (e) => e.id === idOrCode || e.employeeCode.toUpperCase() === idOrCode.toUpperCase()
+      );
+      if (idx >= 0) {
+        localEmployees[idx].isApproved = true;
+        localEmployees[idx].approvalStatus = 'APPROVED';
+        localEmployees[idx].approvedAt = new Date().toISOString();
+        localStorage.setItem('local_employees', JSON.stringify(localEmployees));
+        return localEmployees[idx];
+      }
+      return {
+        id: idOrCode,
+        orgId: 'org_drp_tech_hq',
+        employeeCode: idOrCode,
+        fullName: 'Employee',
+        email: '',
+        department: 'General',
+        position: 'Staff',
+        faceEmbedding: [],
+        isActive: true,
+        isApproved: true,
+        approvalStatus: 'APPROVED',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    }
+  },
+
+  async rejectEmployee(idOrCode: string, reason?: string): Promise<Employee> {
+    try {
+      const res = await apiClient.post(`/employees/${idOrCode}/reject`, { reason });
+      return res.data.data;
+    } catch {
+      const localEmployees: Employee[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
+      const idx = localEmployees.findIndex(
+        (e) => e.id === idOrCode || e.employeeCode.toUpperCase() === idOrCode.toUpperCase()
+      );
+      if (idx >= 0) {
+        localEmployees[idx].isApproved = false;
+        localEmployees[idx].approvalStatus = 'REJECTED';
+        localEmployees[idx].rejectionReason = reason;
+        localStorage.setItem('local_employees', JSON.stringify(localEmployees));
+        return localEmployees[idx];
+      }
+      return {
+        id: idOrCode,
+        orgId: 'org_drp_tech_hq',
+        employeeCode: idOrCode,
+        fullName: 'Employee',
+        email: '',
+        department: 'General',
+        position: 'Staff',
+        faceEmbedding: [],
+        isActive: false,
+        isApproved: false,
+        approvalStatus: 'REJECTED',
+        rejectionReason: reason || 'Rejected by administrator',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    }
   },
 
   async updateEmployee(id: string, data: Partial<Employee>): Promise<Employee> {

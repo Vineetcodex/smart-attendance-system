@@ -9,6 +9,8 @@ class EmployeeModel {
   final bool hasFaceRegistered;
   final String shiftStart;
   final String shiftEnd;
+  final bool isApproved;
+  final String approvalStatus;
 
   EmployeeModel({
     required this.id,
@@ -21,6 +23,8 @@ class EmployeeModel {
     required this.hasFaceRegistered,
     required this.shiftStart,
     required this.shiftEnd,
+    this.isApproved = true,
+    this.approvalStatus = 'APPROVED',
   });
 
   factory EmployeeModel.fromJson(Map<String, dynamic> json) {
@@ -35,6 +39,8 @@ class EmployeeModel {
       hasFaceRegistered: json['hasFaceRegistered'] ?? true,
       shiftStart: json['shiftStart'] ?? '09:00',
       shiftEnd: json['shiftEnd'] ?? '18:00',
+      isApproved: json['isApproved'] ?? (json['approvalStatus'] == 'APPROVED' || json['approvalStatus'] == null),
+      approvalStatus: json['approvalStatus'] ?? 'APPROVED',
     );
   }
 
@@ -50,6 +56,9 @@ class EmployeeModel {
       'hasFaceRegistered': hasFaceRegistered,
       'shiftStart': shiftStart,
       'shiftEnd': shiftEnd,
+      'isApproved': isApproved,
+      'approvalStatus': approvalStatus,
     };
   }
 }
+

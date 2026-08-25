@@ -120,6 +120,22 @@ export class AttendanceController {
         return res.status(404).json({ success: false, message: 'Employee account not found or deactivated.' });
       }
 
+      if (employee.approvalStatus === 'REJECTED') {
+        return res.status(403).json({
+          success: false,
+          isRejected: true,
+          message: employee.rejectionReason || 'Registration was rejected by administrator.',
+        });
+      }
+
+      if (employee.approvalStatus === 'PENDING' || employee.isApproved === false) {
+        return res.status(403).json({
+          success: false,
+          isPendingApproval: true,
+          message: 'Your account is pending administrator approval. You cannot mark attendance until an admin approves your profile.',
+        });
+      }
+
       // -------------------------------------------------------------
       // -------------------------------------------------------------
       // FACTOR 1: Master QR Code Verification (Dual-Factor if scanned)

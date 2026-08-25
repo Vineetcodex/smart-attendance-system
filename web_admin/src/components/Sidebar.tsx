@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -9,8 +9,10 @@ import {
   Building2,
   Smartphone,
   ScanLine,
+  UserCheck,
   X,
 } from 'lucide-react';
+import { api } from '../services/api.js';
 
 interface SidebarProps {
   isOpen?: boolean;
@@ -18,8 +20,30 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => {
+  const [pendingCount, setPendingCount] = useState<number>(0);
+
+  useEffect(() => {
+    const fetchPendingCount = async () => {
+      try {
+        const pending = await api.getPendingEmployees();
+        setPendingCount(Array.isArray(pending) ? pending.length : 0);
+      } catch {
+        // silent fallback
+      }
+    };
+    fetchPendingCount();
+    const timer = setInterval(fetchPendingCount, 10000);
+    return () => clearInterval(timer);
+  }, []);
+
   const navItems = [
     { to: '/admin', label: 'Live Dashboard', icon: LayoutDashboard, exact: true },
+    {
+      to: '/admin/approvals',
+      label: 'Registration Approvals',
+      icon: UserCheck,
+      badge: pendingCount > 0 ? pendingCount : undefined,
+    },
     { to: '/admin/employees', label: 'Employee Directory', icon: Users },
     { to: '/admin/reports', label: 'Attendance Reports', icon: FileSpreadsheet },
     { to: '/admin/org-settings', label: 'Master QR & Geofence', icon: Building2 },
@@ -81,15 +105,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
                   end={item.exact}
                   onClick={() => onClose?.()}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
+                    `flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
                       isActive
                         ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-sm'
                         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                     }`
                   }
                 >
-                  <Icon className="w-4 h-4 shrink-0" />
-                  <span>{item.label}</span>
+                  <div className="flex items-center gap-3">
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span>{item.label}</span>
+                  </div>
+                  {item.badge !== undefined && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-slate-950 shadow-sm animate-pulse">
+                      {item.badge}
+                    </span>
+                  )}
                 </NavLink>
               );
             })}

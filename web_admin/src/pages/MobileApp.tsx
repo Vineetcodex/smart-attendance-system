@@ -31,6 +31,8 @@ import {
   Download,
   ArrowUpCircle,
   ExternalLink,
+  Clock,
+  Hourglass,
 } from 'lucide-react';
 import {
   api,
@@ -442,10 +444,70 @@ export const MobileApp: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (currentEmp) {
+    if (currentEmp && (currentEmp.isApproved !== false && currentEmp.approvalStatus !== 'PENDING')) {
       fetchMyAttendanceLogs(currentEmp.id);
     }
   }, [currentEmp]);
+
+  // Approval Status Polling and Verification
+  const [isCheckingApproval, setIsCheckingApproval] = useState(false);
+
+  const checkCurrentApprovalStatus = useCallback(async (isManual = false) => {
+    if (!currentEmp) return;
+    if (isManual) setIsCheckingApproval(true);
+    try {
+      const res = await api.checkApprovalStatus(currentEmp.employeeCode || currentEmp.id);
+      if (res.success && res.isApproved) {
+        playAudioFeedback('SUCCESS');
+        const updatedEmp: Employee = {
+          ...currentEmp,
+          ...res.employee,
+          isApproved: true,
+          approvalStatus: 'APPROVED',
+        };
+        setCurrentEmp(updatedEmp);
+        localStorage.setItem('employee_user', JSON.stringify(updatedEmp));
+        if (!localStorage.getItem('employee_token')) {
+          localStorage.setItem('employee_token', 'approved_token_' + Date.now());
+        }
+        fetchInitialData();
+        fetchMyAttendanceLogs(updatedEmp.id);
+        showToast(`🎉 Account Approved! Welcome, ${updatedEmp.fullName}!`);
+      } else if (res.approvalStatus === 'REJECTED') {
+        const updatedEmp: Employee = {
+          ...currentEmp,
+          isApproved: false,
+          approvalStatus: 'REJECTED',
+          rejectionReason: res.rejectionReason || res.message,
+        };
+        setCurrentEmp(updatedEmp);
+        localStorage.setItem('employee_user', JSON.stringify(updatedEmp));
+        if (isManual) {
+          showToast('❌ Registration was rejected by administrator.');
+        }
+      } else if (isManual) {
+        showToast('⏳ Account is still pending admin approval.');
+      }
+    } catch {
+      if (isManual) showToast('Network check failed. Standalone offline mode.');
+    } finally {
+      if (isManual) setIsCheckingApproval(false);
+    }
+  }, [currentEmp]);
+
+  // Auto-poll approval status every 8 seconds when pending
+  useEffect(() => {
+    let interval: any = null;
+    const isPending = currentEmp && (currentEmp.approvalStatus === 'PENDING' || currentEmp.isApproved === false);
+    if (isPending) {
+      interval = setInterval(() => {
+        checkCurrentApprovalStatus(false);
+      }, 8000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [currentEmp, checkCurrentApprovalStatus]);
 
   // Camera Management
   useEffect(() => {
@@ -951,7 +1013,7 @@ export const MobileApp: React.FC = () => {
         photoUrl: primaryPhoto,
       });
 
-      const createdEmp =
+      const createdEmp: Employee =
         res.data?.employee ||
         res.employee || {
           id: 'emp_' + Date.now(),
@@ -965,21 +1027,35 @@ export const MobileApp: React.FC = () => {
           faceEmbeddings: poseEmbeddings.length > 0 ? poseEmbeddings : [primaryEmbedding],
           photoUrl: primaryPhoto,
           isActive: true,
+          isApproved: false,
+          approvalStatus: 'PENDING',
           shiftStart: signupShiftStart,
           shiftEnd: signupShiftEnd,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
 
+      const isPending =
+        res.isPendingApproval ||
+        res.data?.isPendingApproval ||
+        createdEmp.approvalStatus === 'PENDING' ||
+        createdEmp.isApproved === false;
+
       playAudioFeedback('SUCCESS');
       setCurrentEmp(createdEmp);
       localStorage.setItem('employee_user', JSON.stringify(createdEmp));
-      if (!localStorage.getItem('employee_token')) {
-        localStorage.setItem('employee_token', 'token_' + Date.now());
+
+      if (!isPending) {
+        if (!localStorage.getItem('employee_token')) {
+          localStorage.setItem('employee_token', 'token_' + Date.now());
+        }
+        fetchInitialData();
+        fetchMyAttendanceLogs(createdEmp.id);
+        showToast(`🎉 Registration Successful! Welcome, ${createdEmp.fullName}!`);
+      } else {
+        localStorage.removeItem('employee_token');
+        showToast('✅ Registration Submitted! Waiting for Admin Approval.');
       }
-      fetchInitialData();
-      fetchMyAttendanceLogs(createdEmp.id);
-      showToast(`🎉 Registration Successful! Welcome, ${createdEmp.fullName}!`);
     } catch (err: any) {
       if (err.response?.status === 409 || err.response?.data?.isMalpractice) {
         const msg = err.response?.data?.message || '🚨 Face already enrolled under another ID!';
@@ -1005,6 +1081,8 @@ export const MobileApp: React.FC = () => {
           capturedPoses.straight?.photoUrl ||
           `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(signupFullName.trim())}`,
         isActive: true,
+        isApproved: false,
+        approvalStatus: 'PENDING',
         shiftStart: signupShiftStart,
         shiftEnd: signupShiftEnd,
         createdAt: new Date().toISOString(),
@@ -1015,13 +1093,11 @@ export const MobileApp: React.FC = () => {
       localEmployees.push(fallbackEmp);
       localStorage.setItem('local_employees', JSON.stringify(localEmployees));
       localStorage.setItem('employee_user', JSON.stringify(fallbackEmp));
-      localStorage.setItem('employee_token', 'local_token_' + Date.now());
+      localStorage.removeItem('employee_token');
 
       playAudioFeedback('SUCCESS');
       setCurrentEmp(fallbackEmp);
-      fetchInitialData();
-      fetchMyAttendanceLogs(fallbackEmp.id);
-      showToast(`🎉 Registration Successful! Welcome, ${fallbackEmp.fullName}!`);
+      showToast('✅ Registration Submitted! Waiting for Admin Approval.');
     } finally {
       setIsSigningUp(false);
     }
@@ -1037,7 +1113,30 @@ export const MobileApp: React.FC = () => {
 
     try {
       const res = await api.employeeLogin(loginIdentifier.trim(), loginPassword.trim());
-      if (res.success && res.data?.employee) {
+      if (res.isPendingApproval || res.data?.isPendingApproval) {
+        playAudioFeedback('STEP');
+        const emp = res.data?.employee || res.employee || {
+          id: 'emp_' + Date.now(),
+          orgId: 'org_drp_tech_hq',
+          employeeCode: loginIdentifier.trim().toUpperCase(),
+          fullName: 'Employee',
+          email: '',
+          department: 'Engineering',
+          position: 'Staff',
+          faceEmbedding: [],
+          isActive: true,
+          isApproved: false,
+          approvalStatus: 'PENDING',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        setCurrentEmp(emp);
+        localStorage.setItem('employee_user', JSON.stringify(emp));
+        localStorage.removeItem('employee_token');
+        showToast('⏳ Account Pending Admin Approval');
+      } else if (res.isRejected || res.approvalStatus === 'REJECTED') {
+        setLoginError(res.message || 'Your registration was rejected by administrator.');
+      } else if (res.success && res.data?.employee) {
         playAudioFeedback('SUCCESS');
         setCurrentEmp(res.data.employee);
         if (res.data.organization) setOrg(res.data.organization);
@@ -1047,7 +1146,29 @@ export const MobileApp: React.FC = () => {
         setLoginError(res.message || 'Invalid credentials.');
       }
     } catch (err: any) {
-      setLoginError(err.response?.data?.message || 'Login failed. Check your ID/email and password.');
+      if (err.response?.data?.isPendingApproval) {
+        const emp = err.response.data.data?.employee || {
+          id: 'emp_' + Date.now(),
+          orgId: 'org_drp_tech_hq',
+          employeeCode: loginIdentifier.trim().toUpperCase(),
+          fullName: 'Employee',
+          email: '',
+          department: 'Engineering',
+          position: 'Staff',
+          faceEmbedding: [],
+          isActive: true,
+          isApproved: false,
+          approvalStatus: 'PENDING',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        setCurrentEmp(emp);
+        localStorage.setItem('employee_user', JSON.stringify(emp));
+        localStorage.removeItem('employee_token');
+        showToast('⏳ Account Pending Admin Approval');
+      } else {
+        setLoginError(err.response?.data?.message || 'Login failed. Check your ID/email and password.');
+      }
     } finally {
       setIsLoggingIn(false);
     }
@@ -1876,6 +1997,135 @@ export const MobileApp: React.FC = () => {
               </a>
             </div>
           </div>
+        ) : currentEmp && (currentEmp.approvalStatus === 'PENDING' || currentEmp.isApproved === false) ? (
+          // =========================================================================
+          // WAITING FOR ADMIN APPROVAL SCREEN (NEW REGISTRATION PENDING)
+          // =========================================================================
+          <div className="space-y-6 animate-fadeIn py-2 max-w-md mx-auto">
+            <div className="glass-panel p-6 rounded-3xl border-2 border-amber-500/40 bg-gradient-to-b from-amber-950/30 via-slate-900/90 to-slate-950 shadow-2xl relative overflow-hidden text-center space-y-5">
+              {/* Decorative Background Glow */}
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+
+              {/* Pulsing Status Icon */}
+              <div className="relative mx-auto w-20 h-20 rounded-3xl bg-amber-500/20 border-2 border-amber-400/50 flex items-center justify-center shadow-lg shadow-amber-500/20">
+                <Clock className="w-10 h-10 text-amber-400 animate-pulse" />
+                <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-4 w-4 bg-amber-500"></span>
+                </span>
+              </div>
+
+              <div className="space-y-2 relative z-10">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase tracking-wider">
+                  <Hourglass className="w-3.5 h-3.5" /> Pending Admin Approval
+                </span>
+                <h2 className="text-xl font-extrabold text-white tracking-tight">
+                  Registration Submitted!
+                </h2>
+                <p className="text-xs text-slate-300 max-w-sm mx-auto leading-relaxed">
+                  Your Face ID biometric profile and employee details have been successfully registered. For office security, please wait for an administrator to approve your account.
+                </p>
+              </div>
+
+              {/* Profile Details Snapshot */}
+              <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 text-left space-y-3 relative z-10">
+                <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
+                  <img
+                    src={
+                      currentEmp.photoUrl ||
+                      `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(currentEmp.fullName)}`
+                    }
+                    alt={currentEmp.fullName}
+                    className="w-12 h-12 rounded-xl object-cover border-2 border-amber-400/60 shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <h4 className="font-bold text-white text-sm truncate">{currentEmp.fullName}</h4>
+                    <p className="text-xs font-mono text-amber-400 font-semibold">{currentEmp.employeeCode}</p>
+                    <p className="text-[11px] text-slate-400 truncate">{currentEmp.department} • {currentEmp.position}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="p-2 rounded-lg bg-slate-900/60 border border-slate-800/80">
+                    <span className="text-slate-400 block text-[10px]">Biometric Baseline</span>
+                    <span className="text-emerald-400 font-semibold flex items-center gap-1 mt-0.5">
+                      <CheckCircle2 className="w-3 h-3" /> 3 Poses Enrolled
+                    </span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-slate-900/60 border border-slate-800/80">
+                    <span className="text-slate-400 block text-[10px]">Approval Status</span>
+                    <span className="text-amber-400 font-semibold flex items-center gap-1 mt-0.5">
+                      <Clock className="w-3 h-3" /> In Review
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Live Polling Action */}
+              <div className="space-y-2.5 relative z-10">
+                <button
+                  type="button"
+                  onClick={() => checkCurrentApprovalStatus(true)}
+                  disabled={isCheckingApproval}
+                  className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-60"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isCheckingApproval ? 'animate-spin' : ''}`} />
+                  <span>{isCheckingApproval ? 'Checking Status with Server...' : 'Check Approval Status Now'}</span>
+                </button>
+
+                <p className="text-[10px] text-slate-500 flex items-center justify-center gap-1.5 font-mono">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Auto-refreshing status in real-time
+                </p>
+              </div>
+
+              {/* Back to Login / Switch User */}
+              <div className="pt-2 border-t border-slate-800/80 relative z-10 flex items-center justify-between text-xs">
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="text-slate-400 hover:text-white transition flex items-center gap-1 text-[11px]"
+                >
+                  <LogOut className="w-3 h-3" />
+                  <span>Sign In with Different ID</span>
+                </button>
+
+                <a
+                  href="/admin"
+                  className="text-amber-400 hover:text-amber-300 font-semibold transition text-[11px]"
+                >
+                  Admin Login ➔
+                </a>
+              </div>
+            </div>
+          </div>
+        ) : currentEmp && currentEmp.approvalStatus === 'REJECTED' ? (
+          // =========================================================================
+          // REGISTRATION REJECTED SCREEN
+          // =========================================================================
+          <div className="space-y-6 animate-fadeIn py-4 max-w-md mx-auto">
+            <div className="glass-panel p-6 rounded-3xl border-2 border-rose-500/40 bg-gradient-to-b from-rose-950/30 via-slate-900/90 to-slate-950 shadow-2xl text-center space-y-5">
+              <div className="mx-auto w-16 h-16 rounded-3xl bg-rose-500/20 border-2 border-rose-400/50 flex items-center justify-center text-rose-400">
+                <AlertTriangle className="w-8 h-8" />
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-lg font-bold text-white">Registration Rejected</h2>
+                <p className="text-xs text-rose-300">
+                  {currentEmp.rejectionReason || 'Your registration was rejected by the administrator.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  handleLogout();
+                  setAuthMode('SIGNUP');
+                }}
+                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs transition"
+              >
+                Submit New Registration
+              </button>
+            </div>
+          </div>
         ) : (
           // =========================================================================
           // LOGGED IN PORTAL (DASHBOARD | HISTORY | PROFILE)
@@ -2263,8 +2513,8 @@ export const MobileApp: React.FC = () => {
         )}
       </main>
 
-      {/* BOTTOM TAB NAVIGATION (When Logged In) */}
-      {currentEmp && (
+      {/* BOTTOM TAB NAVIGATION (When Logged In & Approved) */}
+      {currentEmp && currentEmp.isApproved !== false && currentEmp.approvalStatus !== 'PENDING' && currentEmp.approvalStatus !== 'REJECTED' && (
         <nav className="p-2 bg-slate-900/90 backdrop-blur-md border-t border-slate-800 grid grid-cols-3 gap-1 sticky bottom-0 z-30">
           <button
             onClick={() => setActiveTab('DASHBOARD')}

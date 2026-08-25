@@ -7,11 +7,14 @@ import {
   LogIn,
   LogOut,
   Building2,
+  Check,
+  X,
+  ShieldAlert,
 } from 'lucide-react';
 import { api, AttendanceLog, AttendanceStats, Organization } from '../services/api.js';
 import { StatusBadge } from '../components/StatusBadge.js';
 import { MasterQrPoster } from '../components/MasterQrPoster.js';
-import { QrCode, X } from 'lucide-react';
+import { QrCode } from 'lucide-react';
 
 interface Props {
   org: Organization | null;
@@ -22,11 +25,14 @@ export const Dashboard: React.FC<Props> = ({ org }) => {
   const [recentLogs, setRecentLogs] = useState<AttendanceLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPosterModal, setShowPosterModal] = useState(false);
-  const [liveToast, setLiveToast] = useState<{ message: string; type: 'CHECK_IN' | 'CHECK_OUT'; time: string } | null>(null);
+  const [liveToast, setLiveToast] = useState<{ message: string; type: 'CHECK_IN' | 'CHECK_OUT' | 'SUCCESS' | 'ALERT'; time: string } | null>(null);
 
   const fetchDashboardData = async () => {
     try {
-      const [statsData, logsData] = await Promise.all([api.getStats(), api.getAttendanceLogs()]);
+      const [statsData, logsData] = await Promise.all([
+        api.getStats(),
+        api.getAttendanceLogs(),
+      ]);
       setStats(statsData);
       setRecentLogs(logsData.slice(0, 15)); // top 15 recent
     } catch (err) {
@@ -89,16 +95,28 @@ export const Dashboard: React.FC<Props> = ({ org }) => {
         <div className={`fixed top-4 left-4 right-4 sm:left-auto sm:right-6 sm:top-6 sm:max-w-md z-50 p-3.5 sm:p-4 rounded-2xl border shadow-2xl backdrop-blur-xl flex items-center gap-3 animate-bounce transition-all ${
           liveToast.type === 'CHECK_OUT'
             ? 'bg-purple-950/95 border-purple-500/50 text-white'
+            : liveToast.type === 'ALERT'
+            ? 'bg-rose-950/95 border-rose-500/50 text-white'
             : 'bg-emerald-950/95 border-emerald-500/50 text-white'
         }`}>
           <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 ${
-            liveToast.type === 'CHECK_OUT' ? 'bg-purple-500/20 text-purple-300' : 'bg-emerald-500/20 text-emerald-300'
+            liveToast.type === 'CHECK_OUT'
+              ? 'bg-purple-500/20 text-purple-300'
+              : liveToast.type === 'ALERT'
+              ? 'bg-rose-500/20 text-rose-300'
+              : 'bg-emerald-500/20 text-emerald-300'
           }`}>
-            {liveToast.type === 'CHECK_OUT' ? <LogOut className="w-5 h-5" /> : <LogIn className="w-5 h-5" />}
+            {liveToast.type === 'CHECK_OUT' ? (
+              <LogOut className="w-5 h-5" />
+            ) : liveToast.type === 'ALERT' ? (
+              <ShieldAlert className="w-5 h-5" />
+            ) : (
+              <Check className="w-5 h-5" />
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-xs font-bold truncate">{liveToast.message}</p>
-            <p className="text-[10px] text-slate-400 font-mono">Recorded at {liveToast.time} • Live Push</p>
+            <p className="text-[10px] text-slate-400 font-mono">Recorded at {liveToast.time} • Live System Update</p>
           </div>
           <button
             onClick={() => setLiveToast(null)}

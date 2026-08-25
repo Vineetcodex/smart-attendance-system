@@ -13,14 +13,29 @@ export class EmployeeController {
     try {
       const org = db.getPrimaryOrganization();
       const department = req.query.department as string;
+      const status = req.query.status as string; // 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'
       let employees = db.getEmployees(org?.id);
 
       if (department && department !== 'ALL') {
         employees = employees.filter((e) => e.department.toLowerCase() === department.toLowerCase());
       }
 
+      if (status && status !== 'ALL') {
+        if (status === 'PENDING') {
+          employees = employees.filter((e) => e.approvalStatus === 'PENDING' || e.isApproved === false);
+        } else if (status === 'APPROVED') {
+          employees = employees.filter((e) => e.isApproved !== false && e.approvalStatus !== 'PENDING' && e.approvalStatus !== 'REJECTED');
+        } else if (status === 'REJECTED') {
+          employees = employees.filter((e) => e.approvalStatus === 'REJECTED');
+        }
+      }
+
       // Hide passwordHash in listing
-      const sanitized = employees.map(({ passwordHash, ...rest }) => rest);
+      const sanitized = employees.map(({ passwordHash, ...rest }) => ({
+        ...rest,
+        isApproved: rest.isApproved !== false && rest.approvalStatus !== 'PENDING' && rest.approvalStatus !== 'REJECTED',
+        approvalStatus: rest.approvalStatus || (rest.isApproved === false ? 'PENDING' : 'APPROVED'),
+      }));
       return res.json({ success: true, count: sanitized.length, data: sanitized });
     } catch (err: any) {
       return res.status(500).json({ success: false, message: err.message });
@@ -37,14 +52,21 @@ export class EmployeeController {
         return res.status(404).json({ success: false, message: 'Employee not found.' });
       }
       const { passwordHash, ...sanitized } = emp;
-      return res.json({ success: true, data: sanitized });
+      return res.json({
+        success: true,
+        data: {
+          ...sanitized,
+          isApproved: sanitized.isApproved !== false && sanitized.approvalStatus !== 'PENDING' && sanitized.approvalStatus !== 'REJECTED',
+          approvalStatus: sanitized.approvalStatus || (sanitized.isApproved === false ? 'PENDING' : 'APPROVED'),
+        },
+      });
     } catch (err: any) {
       return res.status(500).json({ success: false, message: err.message });
     }
   }
 
   /**
-   * Create & Onboard a new Employee
+   * Create & Onboard a new Employee (Admin Onboarding - pre-approved)
    */
   static async createEmployee(req: AuthRequest, res: Response) {
     try {
@@ -60,6 +82,8 @@ export class EmployeeController {
         photoUrl,
         shiftStart,
         shiftEnd,
+        isApproved = true,
+        approvalStatus = 'APPROVED',
       } = req.body;
 
       if (!employeeCode || !fullName || !email) {
@@ -129,6 +153,10 @@ export class EmployeeController {
         faceEmbedding: embedding,
         photoUrl: photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(fullName)}`,
         isActive: true,
+        isApproved: isApproved,
+        approvalStatus: (approvalStatus as any) || 'APPROVED',
+        approvedAt: isApproved ? new Date().toISOString() : undefined,
+        approvedBy: isApproved ? (req.user?.fullName || 'Admin') : undefined,
         shiftStart: shiftStart || '09:00',
         shiftEnd: shiftEnd || '18:00',
         createdAt: new Date().toISOString(),
@@ -145,6 +173,50 @@ export class EmployeeController {
       });
     } catch (err: any) {
       console.error('Create employee error:', err);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  }
+
+  /**
+   * Approve Employee Registration
+   */
+  static async approveEmployee(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const adminName = req.user?.fullName || 'Administrator';
+      const updated = db.approveEmployee(id, adminName);
+      if (!updated) {
+        return res.status(404).json({ success: false, message: 'Employee not found.' });
+      }
+      const { passwordHash, ...sanitized } = updated;
+      return res.json({
+        success: true,
+        message: `Employee ${sanitized.fullName} (${sanitized.employeeCode}) approved successfully!`,
+        data: sanitized,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  }
+
+  /**
+   * Reject Employee Registration
+   */
+  static async rejectEmployee(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+      const updated = db.rejectEmployee(id, reason);
+      if (!updated) {
+        return res.status(404).json({ success: false, message: 'Employee not found.' });
+      }
+      const { passwordHash, ...sanitized } = updated;
+      return res.json({
+        success: true,
+        message: `Employee ${sanitized.fullName} (${sanitized.employeeCode}) registration rejected.`,
+        data: sanitized,
+      });
+    } catch (err: any) {
       return res.status(500).json({ success: false, message: err.message });
     }
   }
