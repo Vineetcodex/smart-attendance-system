@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
 import { config } from './config/env.js';
 import apiRoutes from './routes/api.js';
 import { db } from './db/database.js';
@@ -26,22 +27,50 @@ app.use('/uploads', express.static(config.uploadsDir));
 // API Routes
 app.use('/api/v1', apiRoutes);
 
-// Root Welcome & Health
-app.get('/', (req, res) => {
-  res.json({
-    service: 'Automated QR & Facial Verification Office Attendance API',
-    version: '1.0.0',
-    status: 'ACTIVE',
-    documentation: {
-      health: 'GET /api/v1/health',
-      authAdmin: 'POST /api/v1/auth/admin-login',
-      authEmployee: 'POST /api/v1/auth/employee-login',
-      orgSettings: 'GET /api/v1/org',
-      verifyAttendance: 'POST /api/v1/attendance/verify',
-      liveStream: 'GET /api/v1/attendance/stream',
-    },
+// Locate web_admin dist directory if available
+const candidateWebDistPaths = [
+  path.resolve(process.cwd(), '../web_admin/dist'),
+  path.resolve(process.cwd(), 'web_admin/dist'),
+  path.resolve(process.cwd(), 'dist/public'),
+  path.resolve(process.cwd(), 'public'),
+  path.resolve(__dirname, '../../web_admin/dist'),
+  path.resolve(__dirname, '../web_admin/dist'),
+  path.resolve(__dirname, '../public'),
+];
+
+const webDistPath = candidateWebDistPaths.find(
+  (p) => fs.existsSync(p) && fs.existsSync(path.join(p, 'index.html'))
+);
+
+if (webDistPath) {
+  console.log(`📦 Serving Web Terminal & Admin Portal from: ${webDistPath}`);
+  app.use(express.static(webDistPath));
+
+  // SPA Catch-all Fallback (routes like /, /admin, /mobile, /approvals to index.html)
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+      return next();
+    }
+    res.sendFile(path.join(webDistPath, 'index.html'));
   });
-});
+} else {
+  // Root Welcome & Health (Fallback when frontend is not built)
+  app.get('/', (req, res) => {
+    res.json({
+      service: 'Automated QR & Facial Verification Office Attendance API',
+      version: '1.0.0',
+      status: 'ACTIVE',
+      documentation: {
+        health: 'GET /api/v1/health',
+        authAdmin: 'POST /api/v1/auth/admin-login',
+        authEmployee: 'POST /api/v1/auth/employee-login',
+        orgSettings: 'GET /api/v1/org',
+        verifyAttendance: 'POST /api/v1/attendance/verify',
+        liveStream: 'GET /api/v1/attendance/stream',
+      },
+    });
+  });
+}
 
 import os from 'os';
 

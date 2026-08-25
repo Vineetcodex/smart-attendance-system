@@ -98,11 +98,10 @@ export const Approvals: React.FC = () => {
       {/* Toast Notification */}
       {toastMessage && (
         <div
-          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-2xl border text-xs font-semibold shadow-2xl backdrop-blur-xl flex items-center gap-2.5 animate-bounce ${
-            toastMessage.type === 'SUCCESS'
+          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-2xl border text-xs font-semibold shadow-2xl backdrop-blur-xl flex items-center gap-2.5 animate-bounce ${toastMessage.type === 'SUCCESS'
               ? 'bg-emerald-950/95 border-emerald-500/50 text-emerald-200'
               : 'bg-rose-950/95 border-rose-500/50 text-rose-200'
-          }`}
+            }`}
         >
           {toastMessage.type === 'SUCCESS' ? (
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />

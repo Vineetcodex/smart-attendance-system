@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
+    "build:web": "cd ../web_admin && npm install && npm run build",
+    "build:all": "npm run build:web && npm run build",
     "start": "node dist/server.js",
     "seed": "tsx src/db/seed.ts"
   },

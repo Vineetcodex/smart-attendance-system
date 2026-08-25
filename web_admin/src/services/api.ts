@@ -22,14 +22,22 @@ export const getApiBase = (): string => {
   // Detect environment
   if (typeof window !== 'undefined' && window.location) {
     const host = window.location.hostname;
+    const protocol = window.location.protocol;
+    const port = window.location.port;
+
     // Check if running inside Capacitor Android APK
     const isCapacitor =
       (window as any).Capacitor !== undefined ||
-      window.location.protocol === 'capacitor:';
+      protocol === 'capacitor:';
 
     if (isCapacitor) {
       // Default to 24/7 Global Cloud Backend on Render (works on 5G/4G mobile data & any Wi-Fi)
       return 'https://smart-attendance-system-sdnf.onrender.com/api/v1';
+    }
+
+    // If served from production backend (same origin, e.g. on Render or unified server)
+    if (protocol === 'https:' || (port !== '5173' && port !== '3000' && host !== 'localhost' && host !== '127.0.0.1')) {
+      return `${window.location.origin}/api/v1`;
     }
 
     if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') {
