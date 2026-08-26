@@ -20,9 +20,9 @@ interface Props {
 export const OrgSettings: React.FC<Props> = ({ org, onOrgUpdated }) => {
   const [name, setName] = useState(org?.name || '');
   const [address, setAddress] = useState(org?.address || '');
-  const [latitude, setLatitude] = useState(org?.latitude?.toString() || '37.774929');
-  const [longitude, setLongitude] = useState(org?.longitude?.toString() || '-122.419416');
-  const [radius, setRadius] = useState(org?.geofenceRadiusMeters || 50);
+  const [latitude, setLatitude] = useState(org?.latitude?.toString() || '20.278757');
+  const [longitude, setLongitude] = useState(org?.longitude?.toString() || '85.864144');
+  const [radius, setRadius] = useState(org?.geofenceRadiusMeters || 300);
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 

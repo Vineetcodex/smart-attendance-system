@@ -8,9 +8,9 @@ export async function seedDatabase() {
   console.log('🌱 Seeding initial database data...');
 
   const orgId = 'org_drp_tech_hq';
-  const orgLat = 37.774929;
-  const orgLng = -122.419416;
-  const orgRadius = 50;
+  const orgLat = 20.278757;
+  const orgLng = 85.864144;
+  const orgRadius = 300;
 
   // 1. Create Organization
   const { payloadString, salt } = QrService.generateMasterPayload(orgId, orgLat, orgLng, orgRadius);

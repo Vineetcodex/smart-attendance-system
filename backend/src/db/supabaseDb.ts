@@ -258,6 +258,24 @@ export class SupabaseDbManager {
     }
   }
 
+  async deleteEmployee(idOrCode: string): Promise<boolean> {
+    if (!this.client) return false;
+    try {
+      const { error } = await this.client
+        .from('employees')
+        .delete()
+        .or(`id.eq.${idOrCode},employee_code.ilike.${idOrCode}`);
+      if (error) {
+        console.warn('Supabase delete employee error:', error.message);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('Supabase delete employee exception:', err);
+      return false;
+    }
+  }
+
   // -------------------------------------------------------------
   // ATTENDANCE LOGS
   // -------------------------------------------------------------

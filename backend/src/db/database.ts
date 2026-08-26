@@ -238,13 +238,23 @@ class DatabaseManager {
 
   deleteEmployee(idOrCode: string): boolean {
     const initialLen = this.data.employees.length;
+    const target = this.data.employees.find(
+      (e) => e.id === idOrCode || e.employeeCode.toLowerCase() === idOrCode.toLowerCase()
+    );
     this.data.employees = this.data.employees.filter(
       (e) => e.id !== idOrCode && e.employeeCode.toLowerCase() !== idOrCode.toLowerCase()
     );
-    if (this.data.employees.length !== initialLen) {
+    if (this.data.employees.length !== initialLen || target) {
       this.save();
+      const deleteIdentifier = target?.id || idOrCode;
+      supabaseDb.deleteEmployee(deleteIdentifier).catch((e) => console.warn('Supabase delete employee error:', e));
+      if (target?.employeeCode) {
+        supabaseDb.deleteEmployee(target.employeeCode).catch(() => {});
+      }
       return true;
     }
+    // Also trigger cloud deletion just in case
+    supabaseDb.deleteEmployee(idOrCode).catch(() => {});
     return false;
   }
 
