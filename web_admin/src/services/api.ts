@@ -746,12 +746,15 @@ export const api = {
         throw err;
       }
 
-      // Check 90s QR expiration if in offline fallback
-      let isQrTimeValid = true;
-      if (payload.qrScannedAt) {
-        const elapsed = Date.now() - Number(payload.qrScannedAt);
-        if (elapsed > 95000) {
-          isQrTimeValid = false;
+      // Check mandatory Master QR requirement and 90s QR expiration
+      let isQrTimeValid = false;
+      if (payload.qrPayload && payload.qrPayload.trim() !== '') {
+        isQrTimeValid = true;
+        if (payload.qrScannedAt) {
+          const elapsed = Date.now() - Number(payload.qrScannedAt);
+          if (elapsed > 95000) {
+            isQrTimeValid = false;
+          }
         }
       }
 
@@ -780,13 +783,15 @@ export const api = {
         bestMatch = { isMatch: matched, similarity: maxS, distance: minD };
       }
 
-      // Optional geofence check in local standalone mode
+      // Geofence check in local standalone mode (Requires live GPS location)
       const orgRaw = localStorage.getItem('local_org_settings');
       const orgData = orgRaw ? JSON.parse(orgRaw) : null;
-      let isGeoPass = true;
+      let isGeoPass = false;
       let calculatedDistance = 2.5;
 
-      if (orgData && orgData.latitude && orgData.longitude && payload.latitude && payload.longitude) {
+      if (!payload.latitude || !payload.longitude) {
+        isGeoPass = false;
+      } else if (orgData && orgData.latitude && orgData.longitude) {
         const toRad = (deg: number) => (deg * Math.PI) / 180;
         const R = 6371000;
         const dLat = toRad(orgData.latitude - payload.latitude);
@@ -797,9 +802,9 @@ export const api = {
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         calculatedDistance = Math.round(R * c);
         const radius = orgData.geofenceRadiusMeters || 50;
-        if (calculatedDistance > radius) {
-          isGeoPass = false;
-        }
+        isGeoPass = calculatedDistance <= radius;
+      } else {
+        isGeoPass = true; // Fallback if no org coordinates configured
       }
 
       const isBiometricPass = isQrTimeValid && bestMatch.isMatch && (payload.antiSpoofPassed !== false) && isGeoPass;

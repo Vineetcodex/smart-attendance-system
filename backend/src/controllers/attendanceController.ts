@@ -138,13 +138,16 @@ export class AttendanceController {
 
       // -------------------------------------------------------------
       // -------------------------------------------------------------
-      // FACTOR 1: Master QR Code Verification (Dual-Factor if scanned)
+      // FACTOR 1: Master QR Code Verification (MANDATORY DUAL-FACTOR)
       // -------------------------------------------------------------
-      let isQrValid = true;
+      let isQrValid = false;
       let qrError = '';
 
-      if (qrPayload && qrPayload.trim() !== '') {
-        const qrResult = QrService.verifyMasterPayload(qrPayload, org.id);
+      if (!qrPayload || qrPayload.trim() === '') {
+        isQrValid = false;
+        qrError = 'Office Master QR code scan is strictly required. Marking attendance without scanning the QR code is blocked.';
+      } else {
+        const qrResult = QrService.verifyMasterPayload(qrPayload.trim(), org.id);
         isQrValid = qrResult.isValid;
         if (qrResult.isValid) {
           // Check 90-second expiration window between QR scan and Face verification
@@ -160,7 +163,7 @@ export class AttendanceController {
             }
           }
         } else {
-          qrError = qrResult.error || 'Invalid Master QR Code.';
+          qrError = qrResult.error || 'Invalid Master QR Code. Please scan the official Office Master QR poster.';
         }
       }
 
@@ -189,12 +192,33 @@ export class AttendanceController {
       const livenessError = isLivenessValid ? '' : `Anti-Spoofing check failed (${antiSpoofVerdict}). Liveness score: ${(livenessScoreNum * 100).toFixed(0)}%.`;
 
       // -------------------------------------------------------------
-      // FACTOR 4: Optional Geofencing Verification
+      // FACTOR 4: Mandatory Geofencing Verification (GPS Coordinates Required)
       // -------------------------------------------------------------
-      let devLat = latitude !== undefined && latitude !== null ? parseFloat(latitude) : org.latitude;
-      let devLng = longitude !== undefined && longitude !== null ? parseFloat(longitude) : org.longitude;
-      if (isNaN(devLat)) devLat = org.latitude;
-      if (isNaN(devLng)) devLng = org.longitude;
+      if (latitude === undefined || latitude === null || longitude === undefined || longitude === null) {
+        return res.status(422).json({
+          success: false,
+          status: 'REJECTED',
+          message: '📍 Location Required: Device GPS location is mandatory. Please enable Location in your device settings and allow permission.',
+          details: {
+            geofencePassed: false,
+            failureReason: 'Device GPS location missing or switched off.',
+          },
+        });
+      }
+
+      const devLat = parseFloat(latitude);
+      const devLng = parseFloat(longitude);
+      if (isNaN(devLat) || isNaN(devLng)) {
+        return res.status(422).json({
+          success: false,
+          status: 'REJECTED',
+          message: 'Invalid GPS coordinates received.',
+          details: {
+            geofencePassed: false,
+            failureReason: 'Invalid GPS coordinates.',
+          },
+        });
+      }
 
       const geoResult = GeoService.verifyGeofence(
         devLat,
@@ -205,7 +229,7 @@ export class AttendanceController {
         Boolean(isMockLocation)
       );
 
-      // Determine Overall Outcome: QR (if scanned) AND Face match AND Anti-Spoofing Liveness AND Geofence Perimeter must pass
+      // Determine Overall Outcome: QR scan AND Face match AND Anti-Spoofing Liveness AND Geofence Perimeter must all pass
       const isBiometricPass = isQrValid && faceResult.isMatch && isLivenessValid && geoResult.isInside;
 
       // -------------------------------------------------------------
@@ -220,6 +244,32 @@ export class AttendanceController {
         startDate: `${todayDateStr}T00:00:00.000Z`,
         endDate: `${todayDateStr}T23:59:59.999Z`,
       }).filter((l) => l.status !== 'REJECTED');
+
+      // -------------------------------------------------------------
+      // SERVER-SIDE ANTI-DUPLICATE FLOOD GUARD:
+      // Prevent multiple entries within 15 seconds for the same employee
+      // -------------------------------------------------------------
+      if (todayLogs.length > 0) {
+        const lastPunch = todayLogs[0];
+        const elapsedSinceLastSec = Math.abs((now.getTime() - new Date(lastPunch.timestamp).getTime()) / 1000);
+        if (elapsedSinceLastSec < 15) {
+          console.log(`⚡ Duplicate punch blocked for employee ${employee.employeeCode} (${elapsedSinceLastSec.toFixed(1)}s since previous punch)`);
+          return res.status(200).json({
+            success: true,
+            status: lastPunch.status,
+            punchType: lastPunch.punchType,
+            workDurationMinutes: lastPunch.workDurationMinutes,
+            message: `Attendance already recorded for ${employee.fullName}.`,
+            data: lastPunch,
+            details: {
+              faceSimilarityScore: lastPunch.faceSimilarityScore,
+              livenessPassed: lastPunch.antiSpoofPassed,
+              geofencePassed: true,
+              timestamp: lastPunch.timestamp,
+            },
+          });
+        }
+      }
 
       let punchType: 'CHECK_IN' | 'CHECK_OUT' = 'CHECK_IN';
       if (requestedPunchType === 'CHECK_IN' || requestedPunchType === 'CHECK_OUT') {

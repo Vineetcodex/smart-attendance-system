@@ -29,13 +29,14 @@ app.use('/api/v1', apiRoutes);
 
 // Locate web_admin dist directory if available
 const candidateWebDistPaths = [
+  path.resolve(process.cwd(), 'public'),
+  path.resolve(process.cwd(), 'dist/public'),
+  path.resolve(__dirname, '../public'),
+  path.resolve(__dirname, 'public'),
   path.resolve(process.cwd(), '../web_admin/dist'),
   path.resolve(process.cwd(), 'web_admin/dist'),
-  path.resolve(process.cwd(), 'dist/public'),
-  path.resolve(process.cwd(), 'public'),
   path.resolve(__dirname, '../../web_admin/dist'),
   path.resolve(__dirname, '../web_admin/dist'),
-  path.resolve(__dirname, '../public'),
 ];
 
 const webDistPath = candidateWebDistPaths.find(
@@ -60,6 +61,7 @@ if (webDistPath) {
       service: 'Automated QR & Facial Verification Office Attendance API',
       version: '1.0.0',
       status: 'ACTIVE',
+      adminPortal: 'Deploy web_admin or navigate to /admin when static dist is present',
       documentation: {
         health: 'GET /api/v1/health',
         authAdmin: 'POST /api/v1/auth/admin-login',
@@ -70,12 +72,38 @@ if (webDistPath) {
       },
     });
   });
+
+  app.get('/admin*', (req, res) => {
+    res.status(200).send(`
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="UTF-8" />
+          <title>Admin Portal - DRP Technology</title>
+          <style>
+            body { font-family: system-ui, sans-serif; background: #020617; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+            .card { background: #0f172a; border: 1px solid #1e293b; padding: 2rem; border-radius: 1rem; max-width: 480px; text-align: center; }
+            h1 { color: #10b981; font-size: 1.5rem; }
+            p { color: #94a3b8; font-size: 0.875rem; line-height: 1.5; }
+            .badge { background: #1e293b; padding: 0.25rem 0.5rem; border-radius: 0.375rem; font-family: monospace; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <h1>DRP Technology Admin Portal</h1>
+            <p>The backend API is running on Render. Building frontend assets...</p>
+            <p>Admin Login: <span class="badge">admin@drptech.com</span> / <span class="badge">admin123</span></p>
+          </div>
+        </body>
+      </html>
+    `);
+  });
 }
 
 import os from 'os';
 
-// Auto-seed if database is empty or has no employees
-if (!db.getPrimaryOrganization() || db.getEmployees().length === 0) {
+// Auto-seed if database is empty, has no employees, or lacks default admin
+if (!db.getPrimaryOrganization() || db.getEmployees().length === 0 || !db.getAdminByEmail('admin@drptech.com')) {
   seedDatabase().catch((err) => console.error('Error auto-seeding database:', err));
 }
 

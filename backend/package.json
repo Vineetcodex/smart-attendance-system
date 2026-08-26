@@ -2,11 +2,13 @@
   "name": "attendance-backend",
   "version": "1.0.0",
   "description": "Automated QR & Facial Verification Attendance System Backend API",
+  "type": "module",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "npm run build:web && tsc",
     "build:web": "cd ../web_admin && npm install && npm run build",
+    "postbuild": "node scripts/copy_web.js",
     "build:all": "npm run build:web && npm run build",
     "start": "node dist/server.js",
     "seed": "tsx src/db/seed.ts"

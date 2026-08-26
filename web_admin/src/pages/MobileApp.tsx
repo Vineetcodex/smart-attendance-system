@@ -27,6 +27,7 @@ import {
   Timer,
   RotateCcw,
   Building2,
+  MapPin,
   MapPinOff,
   Download,
   ArrowUpCircle,
@@ -254,6 +255,7 @@ export const MobileApp: React.FC = () => {
 
   // Verification Processing State
   const [isProcessing, setIsProcessing] = useState(false);
+  const isProcessingRef = useRef(false);
   const [verifyResult, setVerifyResult] = useState<any | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [serverSettingsOpen, setServerSettingsOpen] = useState(false);
@@ -276,6 +278,34 @@ export const MobileApp: React.FC = () => {
     distanceMeters: 0,
     allowedRadiusMeters: 50,
   });
+
+  // Mandatory Real-Time Location Services & Continuous Monitoring
+  const [liveLocation, setLiveLocation] = useState<{
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+  } | null>(null);
+  const liveLocationRef = useRef<{
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+  } | null>(null);
+  const [liveDistanceMeters, setLiveDistanceMeters] = useState<number | null>(null);
+  const [isLocationChecking, setIsLocationChecking] = useState(false);
+  const [locationErrorModal, setLocationErrorModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    isDenied: boolean;
+    isOff: boolean;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    isDenied: false,
+    isOff: false,
+  });
+  const locationWatchIdRef = useRef<number | null>(null);
 
   // In-App Software Update Modal State
   const [updateModal, setUpdateModal] = useState<{
@@ -509,6 +539,181 @@ export const MobileApp: React.FC = () => {
     };
   }, [currentEmp, checkCurrentApprovalStatus]);
 
+  // Location Watcher Management
+  const stopLocationWatch = useCallback(() => {
+    if (locationWatchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.clearWatch(locationWatchIdRef.current);
+      locationWatchIdRef.current = null;
+    }
+  }, []);
+
+  const requestAndStartLocationWatch = useCallback((): Promise<{ success: boolean; coords?: { latitude: number; longitude: number } }> => {
+    return new Promise((resolve) => {
+      if (typeof navigator === 'undefined' || !navigator.geolocation) {
+        setLocationErrorModal({
+          isOpen: true,
+          title: '📍 Geolocation Not Supported',
+          message: 'Your browser or device does not support GPS Geolocation. Live GPS is strictly mandatory to scan Master QR and verify office attendance.',
+          isDenied: false,
+          isOff: true,
+        });
+        resolve({ success: false });
+        return;
+      }
+
+      setIsLocationChecking(true);
+      stopLocationWatch();
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setIsLocationChecking(false);
+          const coords = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+          };
+          liveLocationRef.current = coords;
+          setLiveLocation(coords);
+
+          // Calculate distance if org coords exist
+          if (org && org.latitude && org.longitude) {
+            const dist = calculateHaversineDistanceMeters(
+              coords.latitude,
+              coords.longitude,
+              org.latitude,
+              org.longitude
+            );
+            setLiveDistanceMeters(dist);
+            if (org.geofenceRadiusMeters && dist > org.geofenceRadiusMeters) {
+              setOutOfPerimeterModal({
+                isOpen: true,
+                distanceMeters: dist,
+                allowedRadiusMeters: org.geofenceRadiusMeters,
+                officeName: org.name,
+              });
+              resolve({ success: false, coords });
+              return;
+            }
+          }
+
+          // Close any open location error modal
+          setLocationErrorModal((prev) => ({ ...prev, isOpen: false }));
+
+          // Start continuous real-time watcher
+          const watchId = navigator.geolocation.watchPosition(
+            (watchPos) => {
+              const updatedCoords = {
+                latitude: watchPos.coords.latitude,
+                longitude: watchPos.coords.longitude,
+                accuracy: watchPos.coords.accuracy,
+              };
+              liveLocationRef.current = updatedCoords;
+              setLiveLocation(updatedCoords);
+
+              if (org && org.latitude && org.longitude) {
+                const updatedDist = calculateHaversineDistanceMeters(
+                  updatedCoords.latitude,
+                  updatedCoords.longitude,
+                  org.latitude,
+                  org.longitude
+                );
+                setLiveDistanceMeters(updatedDist);
+                if (org.geofenceRadiusMeters && updatedDist > org.geofenceRadiusMeters) {
+                  setOutOfPerimeterModal({
+                    isOpen: true,
+                    distanceMeters: updatedDist,
+                    allowedRadiusMeters: org.geofenceRadiusMeters,
+                    officeName: org.name,
+                  });
+                }
+              }
+            },
+            (watchErr) => {
+              console.warn('Location watch error (Location switched off):', watchErr);
+              playAudioFeedback('ALERT');
+              liveLocationRef.current = null;
+              setLiveLocation(null);
+              setLiveDistanceMeters(null);
+              // IF LOCATION SWITCHED OFF MID-SCAN
+              setLocationErrorModal({
+                isOpen: true,
+                title: '⚠️ Location Switched Off!',
+                message: 'Your device location (GPS) was switched off or permission revoked during attendance verification. You MUST keep Location turned ON to scan Master QR and verify Face ID.',
+                isDenied: watchErr.code === 1,
+                isOff: watchErr.code === 2 || watchErr.code === 3,
+              });
+            },
+            {
+              enableHighAccuracy: true,
+              maximumAge: 1000,
+              timeout: 10000,
+            }
+          );
+          locationWatchIdRef.current = watchId;
+
+          resolve({ success: true, coords });
+        },
+        (err) => {
+          setIsLocationChecking(false);
+          liveLocationRef.current = null;
+          setLiveLocation(null);
+          setLiveDistanceMeters(null);
+          playAudioFeedback('ALERT');
+
+          if (err.code === 1) {
+            // PERMISSION_DENIED
+            setLocationErrorModal({
+              isOpen: true,
+              title: '📍 Location Permission Denied',
+              message: 'Attendance verification requires Location Permission to ensure you are physically at the office. Please grant location permission in your browser or device settings.',
+              isDenied: true,
+              isOff: false,
+            });
+          } else {
+            // POSITION_UNAVAILABLE or TIMEOUT (GPS turned off)
+            setLocationErrorModal({
+              isOpen: true,
+              title: '📍 Turn ON Location Services (GPS)',
+              message: 'Device Location (GPS) appears to be turned off or unavailable. Please enable Location in your device settings/notification shade and tap Retry.',
+              isDenied: false,
+              isOff: true,
+            });
+          }
+          resolve({ success: false });
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 6000,
+          maximumAge: 0,
+        }
+      );
+    });
+  }, [org, stopLocationWatch]);
+
+  const handleStartAttendanceFlow = async (type: 'CHECK_IN' | 'CHECK_OUT') => {
+    setPunchType(type);
+    setVerifyResult(null);
+    setAttendanceStep('QR_SCAN');
+    attendanceStepRef.current = 'QR_SCAN';
+    setIsQrVerified(false);
+    setScannedQrPayload(null);
+    scannedQrPayloadRef.current = null;
+    setQrTimerSeconds(90);
+    setQrScannedTimestamp(null);
+    qrScannedTimestampRef.current = null;
+    setQrScanFeedback('Point camera at the Office Master QR poster on the wall');
+    setFacingMode('environment'); // default to rear camera for wall poster
+
+    // Request & verify live location first before opening camera
+    const locResult = await requestAndStartLocationWatch();
+    if (!locResult.success) {
+      // Location modal will be open, do not start camera yet
+      return;
+    }
+
+    setIsAttendanceCameraActive(true);
+  };
+
   // Camera Management
   useEffect(() => {
     if (isAttendanceCameraActive || isEnrollmentCameraOpen) {
@@ -546,6 +751,7 @@ export const MobileApp: React.FC = () => {
 
   const stopCamera = () => {
     isLoopRunning.current = false;
+    stopLocationWatch();
     if (cameraStream) {
       cameraStream.getTracks().forEach((t) => t.stop());
       setCameraStream(null);
@@ -728,45 +934,39 @@ export const MobileApp: React.FC = () => {
         // STEP 1: SCAN & VERIFY OFFICE MASTER QR POSTER
         // -------------------------------------------------------------
         if (step === 'QR_SCAN') {
+          // Check if location was turned off in between
+          if (!liveLocationRef.current) {
+            setQrScanFeedback('⚠️ GPS Location Required: Please turn ON device location to scan QR.');
+            return;
+          }
+
           const qrResult = scanQrFromVideo(video);
           if (qrResult && qrResult.data) {
             const validation = validateMasterQr(qrResult.data, org);
             if (validation.isValid) {
               // Real-time Office Geofence Perimeter Verification
-              if (org && org.latitude && org.longitude && org.geofenceRadiusMeters) {
-                if (navigator.geolocation) {
-                  try {
-                    const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-                      navigator.geolocation.getCurrentPosition(resolve, reject, {
-                        timeout: 3000,
-                        enableHighAccuracy: true,
-                      });
-                    });
+              if (org && org.latitude && org.longitude && org.geofenceRadiusMeters && liveLocationRef.current) {
+                const distance = calculateHaversineDistanceMeters(
+                  liveLocationRef.current.latitude,
+                  liveLocationRef.current.longitude,
+                  org.latitude,
+                  org.longitude
+                );
 
-                    const distance = calculateHaversineDistanceMeters(
-                      pos.coords.latitude,
-                      pos.coords.longitude,
-                      org.latitude,
-                      org.longitude
-                    );
-
-                    if (distance > org.geofenceRadiusMeters) {
-                      // ❌ OUT OF PERIMETER! Block attendance immediately and pop up alert
-                      playAudioFeedback('ALERT');
-                      stopCamera();
-                      setIsAttendanceCameraActive(false);
-                      setOutOfPerimeterModal({
-                        isOpen: true,
-                        distanceMeters: distance,
-                        allowedRadiusMeters: org.geofenceRadiusMeters,
-                        officeName: org.name,
-                      });
-                      showToast(`📍 Out of Office Location (${distance >= 1000 ? (distance / 1000).toFixed(1) + ' km' : distance + ' m'} away)!`);
-                      return;
-                    }
-                  } catch (geoErr) {
-                    console.warn('Geolocation check bypassed/unavailable:', geoErr);
-                  }
+                if (distance > org.geofenceRadiusMeters) {
+                  // ❌ OUT OF PERIMETER! Block attendance immediately and pop up alert
+                  playAudioFeedback('ALERT');
+                  stopCamera();
+                  stopLocationWatch();
+                  setIsAttendanceCameraActive(false);
+                  setOutOfPerimeterModal({
+                    isOpen: true,
+                    distanceMeters: distance,
+                    allowedRadiusMeters: org.geofenceRadiusMeters,
+                    officeName: org.name,
+                  });
+                  showToast(`📍 Out of Office Location (${distance >= 1000 ? (distance / 1000).toFixed(1) + ' km' : distance + ' m'} away)!`);
+                  return;
                 }
               }
 
@@ -830,7 +1030,7 @@ export const MobileApp: React.FC = () => {
             setIsFaceMatch(isMatch);
 
             // Fast Auto-Capture: 250ms sustained lock only when match >= 85%
-            if (isMatch && !isProcessing) {
+            if (isMatch && !isProcessing && !isProcessingRef.current) {
               if (!attendanceHoldStartTime.current) {
                 attendanceHoldStartTime.current = Date.now();
               }
@@ -840,9 +1040,14 @@ export const MobileApp: React.FC = () => {
               setAutoCaptureProgress(pct);
 
               if (pct >= 100) {
+                // IMMEDIATELY LOCK & STOP LOOP TO PREVENT DUPLICATES
+                isLoopRunning.current = false;
+                isProcessingRef.current = true;
                 attendanceHoldStartTime.current = null;
-                setAutoCaptureProgress(0);
+                setAutoCaptureProgress(100);
+                stopCamera();
                 handleTriggerAttendanceVerification(faceResult, scannedQrPayloadRef.current);
+                return;
               }
             } else {
               attendanceHoldStartTime.current = null;
@@ -1189,14 +1394,52 @@ export const MobileApp: React.FC = () => {
     faceData: FaceDetectionResult,
     qrPayloadOverride?: string | null
   ) => {
-    if (!currentEmp || isProcessing) return;
+    if (!currentEmp) return;
+    if (isProcessing) return;
+
+    // Synchronously lock to prevent duplicate async bursts
+    isProcessingRef.current = true;
+    setIsProcessing(true);
+    isLoopRunning.current = false;
+
+    // Check mandatory GPS location
+    if (!liveLocationRef.current) {
+      isProcessingRef.current = false;
+      setIsProcessing(false);
+      playAudioFeedback('ALERT');
+      setLocationErrorModal({
+        isOpen: true,
+        title: '📍 Location Required',
+        message: 'Device location (GPS) is turned off or unavailable. You must enable Location services to mark attendance.',
+        isDenied: false,
+        isOff: true,
+      });
+      return;
+    }
+
+    // Check mandatory Office Master QR
+    const qrPayloadToSend = qrPayloadOverride || scannedQrPayloadRef.current || scannedQrPayload;
+    if (!qrPayloadToSend || qrPayloadToSend.trim() === '') {
+      isProcessingRef.current = false;
+      setIsProcessing(false);
+      playAudioFeedback('ALERT');
+      showToast('❌ Master QR scan is strictly required before facial verification!');
+      attendanceStepRef.current = 'QR_SCAN';
+      setAttendanceStep('QR_SCAN');
+      setIsQrVerified(false);
+      return;
+    }
+
+    // Immediately consume QR session so it cannot be reused
+    scannedQrPayloadRef.current = null;
+    setScannedQrPayload(null);
+    setIsQrVerified(false);
 
     // Strict 90-second expiration check
     if (qrScannedTimestampRef.current && Date.now() - qrScannedTimestampRef.current > 90_000) {
+      isProcessingRef.current = false;
+      setIsProcessing(false);
       playAudioFeedback('ALERT');
-      scannedQrPayloadRef.current = null;
-      setScannedQrPayload(null);
-      setIsQrVerified(false);
       qrScannedTimestampRef.current = null;
       setQrScannedTimestamp(null);
       attendanceStepRef.current = 'QR_SCAN';
@@ -1207,27 +1450,11 @@ export const MobileApp: React.FC = () => {
       return;
     }
 
-    setIsProcessing(true);
     playAudioFeedback('SHUTTER');
 
     try {
-      // Get current GPS position (optional / fallback to org coords)
-      let lat = org?.latitude || 37.7749;
-      let lng = org?.longitude || -122.4194;
-
-      if (navigator.geolocation) {
-        try {
-          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 3000, enableHighAccuracy: true });
-          });
-          lat = pos.coords.latitude;
-          lng = pos.coords.longitude;
-        } catch (_) {
-          // Fallback to org location if geolocation is denied
-        }
-      }
-
-      const qrPayloadToSend = qrPayloadOverride || scannedQrPayloadRef.current || scannedQrPayload || undefined;
+      const lat = liveLocationRef.current.latitude;
+      const lng = liveLocationRef.current.longitude;
 
       const res = await api.verifyAttendance({
         employeeId: currentEmp.id,
@@ -1293,6 +1520,9 @@ export const MobileApp: React.FC = () => {
       setIsProcessing(false);
       setIsAttendanceCameraActive(false);
       stopCamera();
+      setTimeout(() => {
+        isProcessingRef.current = false;
+      }, 3000);
     }
   };
 
@@ -2245,20 +2475,8 @@ export const MobileApp: React.FC = () => {
                   </div>
 
                   <button
-                    onClick={() => {
-                      setVerifyResult(null);
-                      setAttendanceStep('QR_SCAN');
-                      attendanceStepRef.current = 'QR_SCAN';
-                      setIsQrVerified(false);
-                      setScannedQrPayload(null);
-                      scannedQrPayloadRef.current = null;
-                      setQrTimerSeconds(90);
-                      setQrScannedTimestamp(null);
-                      qrScannedTimestampRef.current = null;
-                      setQrScanFeedback('Point camera at the Office Master QR poster on the wall');
-                      setFacingMode('environment'); // default to rear camera for wall poster
-                      setIsAttendanceCameraActive(true);
-                    }}
+                    type="button"
+                    onClick={() => handleStartAttendanceFlow(punchType)}
                     className={`w-full py-3.5 rounded-xl font-bold text-sm shadow-lg transition flex items-center justify-center gap-2 active:scale-95 text-white ${
                       punchType === 'CHECK_OUT'
                         ? 'bg-gradient-to-r from-purple-600 to-rose-600 hover:from-purple-500 hover:to-rose-500 shadow-purple-600/30'
@@ -2906,43 +3124,52 @@ export const MobileApp: React.FC = () => {
           {/* Action Bar / Camera Controls */}
           <div className="space-y-2">
             {attendanceStep === 'QR_SCAN' ? (
-              <div className="space-y-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const payload = org?.masterQrPayload || 'QR-ATTEND-V1:DRP-HQ-01:VALID';
-                    playAudioFeedback('STEP');
-                    const now = Date.now();
-                    qrScannedTimestampRef.current = now;
-                    setQrScannedTimestamp(now);
-                    setQrTimerSeconds(90);
-                    scannedQrPayloadRef.current = payload;
-                    setScannedQrPayload(payload);
-                    setIsQrVerified(true);
-                    setQrScanFeedback('✅ Office Master QR Verified! Aligning face...');
-                    showToast('✅ Office Master QR Verified! 90s Face Scan window started.');
-                    attendanceStepRef.current = 'FACE_SCAN';
-                    setAttendanceStep('FACE_SCAN');
-                    if (facingMode === 'environment') {
-                      setFacingMode('user');
-                    }
-                  }}
-                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition active:scale-95"
-                >
-                  <Sparkles className="w-4 h-4 text-amber-300" />
-                  ✨ Verified Master QR (Proceed to Face ID)
-                </button>
-                <button
-                  onClick={handleToggleCamera}
-                  className="w-full py-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs transition flex items-center justify-center gap-2"
-                >
-                  <SwitchCamera className="w-4 h-4 text-emerald-400" />
-                  Flip Camera ({facingMode === 'environment' ? 'Rear Active' : 'Front Active'})
-                </button>
-                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-center">
-                  <p className="text-[11px] text-amber-300 font-medium flex items-center justify-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5 text-amber-400" />
-                    Scan Office Poster or tap button above to unlock Face Biometrics.
+              <div className="space-y-2.5">
+                {/* Live GPS Geofence HUD Status Indicator */}
+                <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <MapPin className={`w-4 h-4 ${liveLocation ? 'text-emerald-400 animate-pulse' : 'text-rose-400'}`} />
+                    <span className="text-white font-medium text-[11px]">
+                      {liveLocation
+                        ? liveDistanceMeters !== null
+                          ? `📍 In Office • ${liveDistanceMeters.toFixed(0)}m from center`
+                          : '📍 GPS Location Verified'
+                        : '⚠️ GPS Location Unavailable'}
+                    </span>
+                  </div>
+                  {liveLocation && (
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono text-[10px] border border-emerald-500/30">
+                      Geofence OK
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleToggleCamera}
+                    className="py-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs transition flex items-center justify-center gap-1.5"
+                  >
+                    <SwitchCamera className="w-3.5 h-3.5 text-emerald-400" />
+                    Flip ({facingMode === 'environment' ? 'Rear' : 'Front'})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAttendanceCameraActive(false);
+                      stopCamera();
+                    }}
+                    className="py-2.5 rounded-xl bg-slate-800/90 hover:bg-rose-500/20 border border-slate-700 text-slate-300 hover:text-rose-300 font-semibold text-xs transition flex items-center justify-center gap-1.5"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    Cancel
+                  </button>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center">
+                  <p className="text-[11px] text-emerald-300 font-medium flex items-center justify-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-emerald-400" />
+                    Point camera at the Office Master QR poster. Scanning is mandatory.
                   </p>
                 </div>
               </div>
@@ -3137,6 +3364,88 @@ export const MobileApp: React.FC = () => {
               className="w-full py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-600/30 transition active:scale-95 flex items-center justify-center gap-1.5"
             >
               Understood (Close)
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          MODAL: MANDATORY LOCATION PERMISSION & GPS NOTIFICATION
+         ========================================================================= */}
+      {locationErrorModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+          <div className="w-full max-w-sm bg-slate-900 border-2 border-amber-500/50 rounded-3xl p-6 shadow-2xl shadow-amber-950/50 space-y-4 text-center relative overflow-hidden">
+            {/* Ambient Background Glow */}
+            <div className="absolute -top-16 -left-16 w-32 h-32 bg-amber-500/20 rounded-full blur-2xl pointer-events-none" />
+            <div className="absolute -bottom-16 -right-16 w-32 h-32 bg-amber-500/20 rounded-full blur-2xl pointer-events-none" />
+
+            {/* Glowing Icon */}
+            <div className="w-16 h-16 rounded-3xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mx-auto shadow-lg shadow-amber-500/20 text-amber-400">
+              <MapPin className="w-8 h-8 animate-bounce text-amber-400" />
+            </div>
+
+            {/* Header Title */}
+            <div className="space-y-1">
+              <h3 className="text-lg font-extrabold text-white tracking-tight">
+                {locationErrorModal.title || 'Location Required'}
+              </h3>
+              <p className="text-xs text-amber-300 font-semibold flex items-center justify-center gap-1">
+                <span>📍 Mandatory Attendance Security Check</span>
+              </p>
+            </div>
+
+            {/* Main Explanation */}
+            <div className="p-3.5 bg-amber-950/40 rounded-2xl border border-amber-500/30 text-left space-y-2 text-xs">
+              <p className="text-slate-200 leading-relaxed font-medium">
+                {locationErrorModal.message}
+              </p>
+              <div className="text-slate-400 text-[11px] space-y-1 pt-1.5 border-t border-amber-500/20">
+                <p className="font-semibold text-amber-200">Why is location strictly required?</p>
+                <p>
+                  To prevent proxy or remote attendance, the system verifies you are physically inside the office premises when scanning the Master QR code.
+                </p>
+              </div>
+            </div>
+
+            {/* Retry / Grant Permission Button */}
+            <button
+              type="button"
+              disabled={isLocationChecking}
+              onClick={async () => {
+                const res = await requestAndStartLocationWatch();
+                if (res.success) {
+                  setLocationErrorModal((prev) => ({ ...prev, isOpen: false }));
+                  setIsAttendanceCameraActive(true);
+                  showToast('📍 Location verified! Point camera at Master QR.');
+                }
+              }}
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-400 hover:to-emerald-500 text-white font-bold text-xs shadow-lg shadow-amber-500/30 transition active:scale-95 flex items-center justify-center gap-2"
+            >
+              {isLocationChecking ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Checking Device Location (GPS)...
+                </>
+              ) : (
+                <>
+                  <MapPin className="w-4 h-4" />
+                  Turn On GPS & Allow Permission 🔄
+                </>
+              )}
+            </button>
+
+            {/* Dismiss Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setLocationErrorModal((prev) => ({ ...prev, isOpen: false }));
+                setIsAttendanceCameraActive(false);
+                stopCamera();
+                stopLocationWatch();
+              }}
+              className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs font-semibold transition"
+            >
+              Cancel
             </button>
           </div>
         </div>
