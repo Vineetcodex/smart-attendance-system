@@ -163,8 +163,8 @@ export interface AttendanceStats {
   activeGeofenceViolations?: number;
 }
 
-export const APP_VERSION = '1.0.0';
-export const APP_VERSION_CODE = 1;
+export const APP_VERSION = '2.0.0';
+export const APP_VERSION_CODE = 2;
 
 export interface AppVersionInfo {
   latestVersion: string;
@@ -174,6 +174,33 @@ export interface AppVersionInfo {
   downloadUrl: string;
   releasesPageUrl: string;
   mandatory?: boolean;
+}
+
+// Semantic version comparator helper
+function isVersionNewer(
+  latest: string,
+  current: string,
+  latestCode?: number,
+  currentCode?: number
+): boolean {
+  if (latestCode !== undefined && currentCode !== undefined && latestCode > 0 && currentCode > 0) {
+    return latestCode > currentCode;
+  }
+  if (!latest || !current) return false;
+  const parse = (v: string) =>
+    v
+      .replace(/^v/i, '')
+      .split('.')
+      .map((p) => parseInt(p, 10) || 0);
+  const lParts = parse(latest);
+  const cParts = parse(current);
+  for (let i = 0; i < Math.max(lParts.length, cParts.length); i++) {
+    const l = lParts[i] || 0;
+    const c = cParts[i] || 0;
+    if (l > c) return true;
+    if (l < c) return false;
+  }
+  return false;
 }
 
 // Local Euclidean distance helper for offline face verification
@@ -205,10 +232,11 @@ export const api = {
     try {
       const res = await apiClient.get('/app/version');
       const data: AppVersionInfo = res.data;
-      const isNewer = Boolean(
-        data &&
-          ((data.versionCode && data.versionCode > APP_VERSION_CODE) ||
-            (data.latestVersion && data.latestVersion !== APP_VERSION))
+      const isNewer = isVersionNewer(
+        data?.latestVersion || '',
+        APP_VERSION,
+        data?.versionCode,
+        APP_VERSION_CODE
       );
       return { hasUpdate: isNewer, currentVersion: APP_VERSION, versionInfo: data };
     } catch {
