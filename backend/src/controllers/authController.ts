@@ -66,21 +66,65 @@ export class AuthController {
    */
   static async employeeLogin(req: Request, res: Response) {
     try {
-      const { identifier, password } = req.body; // identifier can be employeeCode or email
-      if (!identifier || !password) {
+      const { identifier, employeeCode, email, code, id, password } = req.body;
+      const lookupIdentifier = (identifier || employeeCode || email || code || id || '').toString().trim();
+      const rawPassword = (password || '').toString().trim();
+
+      if (!lookupIdentifier || !rawPassword) {
         return res.status(400).json({ success: false, message: 'Employee code/email and password required.' });
       }
 
-      let employee = db.getEmployeeByCode(identifier);
+      const cleanIdentifier = lookupIdentifier.replace(/\s+/g, '');
+
+      let employee =
+        db.getEmployeeByCode(lookupIdentifier) ||
+        db.getEmployeeByCode(cleanIdentifier) ||
+        db.getEmployeeByEmail(lookupIdentifier) ||
+        db.getEmployeeById(lookupIdentifier);
+
       if (!employee) {
-        employee = db.getEmployeeByEmail(identifier);
+        const all = db.getEmployees();
+        employee = all.find(
+          (e) =>
+            e.employeeCode.toUpperCase() === lookupIdentifier.toUpperCase() ||
+            e.employeeCode.toUpperCase() === cleanIdentifier.toUpperCase() ||
+            e.email.toLowerCase() === lookupIdentifier.toLowerCase() ||
+            e.id === lookupIdentifier
+        );
+      }
+
+      if (!employee) {
+        try {
+          const { supabaseDb } = await import('../db/supabaseDb.js');
+          const supEmp =
+            (await supabaseDb.getEmployeeByCode(lookupIdentifier)) ||
+            (await supabaseDb.getEmployeeByCode(cleanIdentifier)) ||
+            (await supabaseDb.getEmployeeById(lookupIdentifier));
+          if (supEmp) {
+            employee = supEmp;
+            db.createEmployee(supEmp);
+          }
+        } catch (_) {}
       }
 
       if (!employee || !employee.isActive) {
         return res.status(401).json({ success: false, message: 'Invalid credentials or inactive account.' });
       }
 
-      const isMatch = await bcrypt.compare(password, employee.passwordHash);
+      let isMatch = false;
+      if (employee.passwordHash) {
+        try {
+          isMatch = await bcrypt.compare(rawPassword, employee.passwordHash);
+        } catch (_) {
+          isMatch = false;
+        }
+        if (!isMatch && (employee.passwordHash === rawPassword || (employee as any).password === rawPassword)) {
+          isMatch = true;
+        }
+      } else if ((employee as any).password) {
+        isMatch = (employee as any).password === rawPassword;
+      }
+
       if (!isMatch) {
         return res.status(401).json({ success: false, message: 'Invalid credentials.' });
       }

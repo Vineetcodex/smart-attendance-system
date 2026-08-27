@@ -324,8 +324,15 @@ export const api = {
   },
 
   async employeeLogin(employeeCode: string, password: string) {
+    const rawCode = (employeeCode || '').trim();
+    const rawPass = (password || '').trim();
     try {
-      const res = await apiClient.post('/auth/employee-login', { employeeCode, password });
+      const res = await apiClient.post('/auth/employee-login', {
+        identifier: rawCode,
+        employeeCode: rawCode,
+        email: rawCode,
+        password: rawPass,
+      });
       if (res.data.data?.token) {
         localStorage.setItem('employee_token', res.data.data.token);
         localStorage.setItem('employee_user', JSON.stringify(res.data.data.employee));
@@ -338,9 +345,14 @@ export const api = {
 
       console.warn('Backend login unreachable or failed, checking local storage database...');
       const localEmployees: Employee[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
-      const identifier = employeeCode.trim().toUpperCase();
+      const identifier = rawCode.toUpperCase().replace(/\s+/g, '');
+      const rawIdentifier = rawCode.toUpperCase();
       const found = localEmployees.find(
-        (e) => e.employeeCode.toUpperCase() === identifier || e.email.toUpperCase() === identifier
+        (e) =>
+          e.employeeCode.toUpperCase() === rawIdentifier ||
+          e.employeeCode.toUpperCase().replace(/\s+/g, '') === identifier ||
+          e.email.toUpperCase() === rawIdentifier ||
+          e.id === rawCode
       );
       if (found) {
         if (found.approvalStatus === 'REJECTED') {
