@@ -63,8 +63,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: "DRP Technology Employee App v1.0.${{ github.run_number }}"
+          tag_name: v2.0.${{ github.run_number }}
+          name: "DRP Technology Employee App v2.0.${{ github.run_number }}"
+          make_latest: true
+          draft: false
+          prerelease: false
           body: |
             ## 📱 DRP Technology Employee Attendance Mobile App
             

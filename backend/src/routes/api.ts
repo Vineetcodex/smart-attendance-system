@@ -41,10 +41,15 @@ router.get('/app/version', (req, res) => {
     minSupportedVersion: '2.0.0',
     releaseNotes: '• Real-time Office Geofence Perimeter Verification\n• Mandatory Device GPS & Continuous Location Watcher\n• Duplicate Punch Flood Protection & Performance Optimizations',
     downloadUrl: 'https://github.com/Vineetcodex/smart-attendance-system/releases/latest/download/app-debug.apk',
+    directDownloadUrl: '/api/v1/app/download',
     releasesPageUrl: 'https://github.com/Vineetcodex/smart-attendance-system/releases/latest',
     mandatory: false,
     updatedAt: new Date().toISOString(),
   });
+});
+
+router.get('/app/download', (req, res) => {
+  res.redirect('https://github.com/Vineetcodex/smart-attendance-system/releases/latest/download/app-debug.apk');
 });
 
 // Authentication Routes

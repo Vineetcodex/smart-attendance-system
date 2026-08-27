@@ -28,6 +28,11 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Static uploads directory for snapshots & avatar assets
 app.use('/uploads', express.static(config.uploadsDir));
 
+// Direct Android APK Download Shortcut Handlers
+app.get(['/download-apk', '/app-debug.apk', '/apk', '/download/apk', '/app.apk'], (req, res) => {
+  res.redirect('https://github.com/Vineetcodex/smart-attendance-system/releases/latest/download/app-debug.apk');
+});
+
 // API Routes
 app.use('/api/v1', apiRoutes);
 
