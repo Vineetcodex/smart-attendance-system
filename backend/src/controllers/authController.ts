@@ -342,8 +342,10 @@ export class AuthController {
         faceEmbeddings: multiPoseVectors,
         photoUrl: photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(fullName)}`,
         isActive: true,
-        isApproved: false,
-        approvalStatus: 'PENDING' as const,
+        isApproved: true,
+        approvalStatus: 'APPROVED' as const,
+        approvedAt: new Date().toISOString(),
+        approvedBy: 'Auto-Approved System',
         shiftStart,
         shiftEnd,
         createdAt: new Date().toISOString(),
@@ -352,17 +354,31 @@ export class AuthController {
 
       db.createEmployee(newEmployee);
 
+      const token = jwt.sign(
+        {
+          id: newEmployee.id,
+          email: newEmployee.email,
+          employeeCode: newEmployee.employeeCode,
+          role: 'EMPLOYEE',
+          orgId: newEmployee.orgId,
+          fullName: newEmployee.fullName,
+        },
+        config.jwtSecret,
+        { expiresIn: '30d' }
+      );
+
       const { passwordHash: _, ...sanitized } = newEmployee;
 
       return res.status(201).json({
         success: true,
-        isPendingApproval: true,
-        approvalStatus: 'PENDING',
-        message: 'Registration successful! Your profile has been submitted and is currently waiting for admin approval.',
+        isApproved: true,
+        approvalStatus: 'APPROVED',
+        message: 'Registration and facial baseline enrollment successful! You can now sign in and mark attendance daily.',
         data: {
+          token,
           employee: sanitized,
-          isPendingApproval: true,
-          approvalStatus: 'PENDING',
+          isApproved: true,
+          approvalStatus: 'APPROVED',
           organization: org,
         },
       });

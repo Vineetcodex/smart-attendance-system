@@ -1286,8 +1286,8 @@ export const MobileApp: React.FC = () => {
           capturedPoses.straight?.photoUrl ||
           `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(signupFullName.trim())}`,
         isActive: true,
-        isApproved: false,
-        approvalStatus: 'PENDING',
+        isApproved: true,
+        approvalStatus: 'APPROVED',
         shiftStart: signupShiftStart,
         shiftEnd: signupShiftEnd,
         createdAt: new Date().toISOString(),
@@ -1298,11 +1298,11 @@ export const MobileApp: React.FC = () => {
       localEmployees.push(fallbackEmp);
       localStorage.setItem('local_employees', JSON.stringify(localEmployees));
       localStorage.setItem('employee_user', JSON.stringify(fallbackEmp));
-      localStorage.removeItem('employee_token');
+      localStorage.setItem('employee_token', 'local_token_' + Date.now());
 
       playAudioFeedback('SUCCESS');
       setCurrentEmp(fallbackEmp);
-      showToast('✅ Registration Submitted! Waiting for Admin Approval.');
+      showToast(`🎉 Registration Complete! Welcome, ${fallbackEmp.fullName}!`);
     } finally {
       setIsSigningUp(false);
     }

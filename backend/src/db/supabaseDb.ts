@@ -219,33 +219,27 @@ export class SupabaseDbManager {
   async upsertEmployee(emp: Employee): Promise<Employee | null> {
     if (!this.client) return null;
     try {
-      const { error } = await this.client.from('employees').upsert(
-        {
-          id: emp.id,
-          org_id: emp.orgId,
-          employee_code: emp.employeeCode,
-          full_name: emp.fullName,
-          email: emp.email,
-          phone: emp.phone,
-          department: emp.department,
-          position: emp.position,
-          password_hash: emp.passwordHash,
-          face_embedding: emp.faceEmbedding,
-          face_embeddings: emp.faceEmbeddings,
-          photo_url: emp.photoUrl,
-          is_active: emp.isActive,
-          is_approved: emp.isApproved !== false && emp.approvalStatus !== 'PENDING',
-          approval_status: emp.approvalStatus || (emp.isApproved ? 'APPROVED' : 'PENDING'),
-          approved_at: emp.approvedAt,
-          approved_by: emp.approvedBy,
-          rejection_reason: emp.rejectionReason,
-          shift_start: emp.shiftStart,
-          shift_end: emp.shiftEnd,
-          created_at: emp.createdAt || new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'id' }
-      );
+      const payload: any = {
+        id: emp.id,
+        org_id: emp.orgId,
+        employee_code: emp.employeeCode,
+        full_name: emp.fullName,
+        email: emp.email,
+        phone: emp.phone || '',
+        department: emp.department || 'Engineering',
+        position: emp.position || 'Software Engineer',
+        password_hash: emp.passwordHash || '',
+        face_embedding: emp.faceEmbedding || [],
+        face_embeddings: emp.faceEmbeddings || (emp.faceEmbedding ? [emp.faceEmbedding] : []),
+        photo_url: emp.photoUrl || '',
+        is_active: emp.isActive !== false,
+        shift_start: emp.shiftStart || '09:00',
+        shift_end: emp.shiftEnd || '18:00',
+        created_at: emp.createdAt || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await this.client.from('employees').upsert(payload, { onConflict: 'id' });
 
       if (error) {
         console.warn('Supabase upsert employee error:', error.message);
