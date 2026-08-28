@@ -59,7 +59,12 @@ router.post('/auth/employee-login', AuthController.employeeLogin);
 router.post('/auth/employee-signup', AuthController.employeeSignup);
 router.post('/auth/check-face-duplicate', AuthController.checkFaceDuplicate);
 router.get('/auth/employee-status/:idOrCode', AuthController.checkApprovalStatus);
+router.post('/auth/forgot-password', AuthController.forgotPassword);
+router.post('/auth/verify-reset-otp', AuthController.verifyResetOtp);
+router.post('/auth/reset-password', AuthController.resetPassword);
+router.post('/auth/change-password', authenticateJwt, AuthController.changePassword);
 router.get('/auth/me', authenticateJwt, AuthController.getMe);
+
 
 // Organization & Master QR Routes
 router.get('/org', OrgController.getOrganization);
@@ -74,6 +79,7 @@ router.post('/employees', authenticateJwt, requireAdmin, EmployeeController.crea
 router.post('/employees/:id/approve', authenticateJwt, requireAdmin, EmployeeController.approveEmployee);
 router.put('/employees/:id/approve', authenticateJwt, requireAdmin, EmployeeController.approveEmployee);
 router.post('/employees/:id/reject', authenticateJwt, requireAdmin, EmployeeController.rejectEmployee);
+router.put('/employees/:id/reject', authenticateJwt, requireAdmin, EmployeeController.rejectEmployee);
 router.put('/employees/:id', authenticateJwt, requireAdmin, EmployeeController.updateEmployee);
 router.delete('/employees/:id', authenticateJwt, requireAdmin, EmployeeController.deleteEmployee);
 

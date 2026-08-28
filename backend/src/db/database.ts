@@ -39,9 +39,13 @@ export interface Employee {
   rejectionReason?: string;
   shiftStart?: string; // e.g. "09:00"
   shiftEnd?: string;   // e.g. "18:00"
+  resetOtp?: string;
+  resetOtpExpiresAt?: string;
+  resetOtpAttempts?: number;
   createdAt: string;
   updatedAt: string;
 }
+
 
 export interface AttendanceLog {
   id: string;
@@ -93,6 +97,7 @@ class DatabaseManager {
     attendance_logs: [],
     admin_users: [],
   };
+  private isCloudSyncing = false;
 
   constructor() {
     if (!fs.existsSync(config.dataDir)) {
@@ -132,13 +137,158 @@ class DatabaseManager {
     }
   }
 
-  private save(): void {
+  public save(): void {
     try {
       fs.writeFileSync(this.dbPath, JSON.stringify(this.data, null, 2), 'utf-8');
     } catch (err) {
       console.error('Error saving database:', err);
     }
   }
+
+  /**
+   * Bidirectional cloud synchronization:
+   * Restores latest cloud state from Supabase on boot and pushes any missing local logs/employees up to Supabase.
+   */
+  public async syncWithCloud(): Promise<boolean> {
+    if (this.isCloudSyncing) return false;
+    this.isCloudSyncing = true;
+    try {
+      const isConnected = await supabaseDb.checkConnection();
+      if (!isConnected) {
+        console.log('ℹ️ Supabase not reachable or credentials unconfigured. Running in local persistence mode.');
+        this.isCloudSyncing = false;
+        return false;
+      }
+
+      console.log('☁️ Syncing local database with Supabase Cloud...');
+
+      // 1. Sync Organizations
+      const cloudOrgs = await supabaseDb.getOrganizations();
+      if (cloudOrgs.length > 0) {
+        for (const cOrg of cloudOrgs) {
+          const idx = this.data.organizations.findIndex((o) => o.id === cOrg.id);
+          if (idx >= 0) {
+            this.data.organizations[idx] = { ...this.data.organizations[idx], ...cOrg };
+          } else {
+            this.data.organizations.push(cOrg);
+          }
+        }
+      } else if (this.data.organizations.length > 0) {
+        for (const localOrg of this.data.organizations) {
+          await supabaseDb.upsertOrganization(localOrg);
+        }
+      }
+
+      // 2. Sync Employees (Cloud is master, but push unique local ones up)
+      const cloudEmployees = await supabaseDb.getEmployees();
+      const cloudEmpMap = new Map<string, Employee>();
+      for (const ce of cloudEmployees) {
+        cloudEmpMap.set(ce.id, ce);
+        if (ce.employeeCode) cloudEmpMap.set(ce.employeeCode.toUpperCase(), ce);
+      }
+
+      // Merge Cloud employees into Local
+      for (const ce of cloudEmployees) {
+        const localIdx = this.data.employees.findIndex(
+          (e) => e.id === ce.id || e.employeeCode.toUpperCase() === ce.employeeCode.toUpperCase()
+        );
+        if (localIdx >= 0) {
+          const localEmp = this.data.employees[localIdx];
+          const finalApprovalStatus = ce.approvalStatus || localEmp.approvalStatus || (ce.isApproved === false ? 'PENDING' : 'APPROVED');
+          const finalIsApproved = finalApprovalStatus === 'APPROVED';
+
+          this.data.employees[localIdx] = {
+            ...localEmp,
+            ...ce,
+            isApproved: finalIsApproved,
+            approvalStatus: finalApprovalStatus,
+          };
+        } else {
+          this.data.employees.push(ce);
+        }
+      }
+
+      // Push any local employees not present in Cloud to Supabase
+      for (const le of this.data.employees) {
+        if (!cloudEmpMap.has(le.id) && !cloudEmpMap.has(le.employeeCode.toUpperCase())) {
+          console.log(`☁️ Uploading local employee ${le.employeeCode} (${le.fullName}) to Supabase...`);
+          await supabaseDb.upsertEmployee(le);
+        }
+      }
+
+      // 3. Sync Attendance Logs (Union of both)
+      const cloudLogs = await supabaseDb.getAttendanceLogs();
+      const cloudLogIds = new Set(cloudLogs.map((l) => l.id));
+      const localLogIds = new Set(this.data.attendance_logs.map((l) => l.id));
+
+      // Add missing cloud logs to local
+      for (const cl of cloudLogs) {
+        if (!localLogIds.has(cl.id)) {
+          this.data.attendance_logs.push(cl);
+          localLogIds.add(cl.id);
+        }
+      }
+
+      // Build lookup for active employee IDs
+      const validEmpIds = new Set(this.data.employees.map((e) => e.id));
+      const codeToIdMap = new Map<string, string>();
+      for (const e of this.data.employees) {
+        codeToIdMap.set(e.employeeCode.toUpperCase(), e.id);
+      }
+
+      // Push missing local logs up to Supabase (ensuring valid employee foreign key)
+      let uploadedLogsCount = 0;
+      for (const ll of this.data.attendance_logs) {
+        if (!cloudLogIds.has(ll.id)) {
+          if (!validEmpIds.has(ll.employeeId) && codeToIdMap.has(ll.employeeCode.toUpperCase())) {
+            ll.employeeId = codeToIdMap.get(ll.employeeCode.toUpperCase())!;
+          }
+          if (validEmpIds.has(ll.employeeId)) {
+            await supabaseDb.createAttendanceLog(ll);
+            cloudLogIds.add(ll.id);
+            uploadedLogsCount++;
+          }
+        }
+      }
+      if (uploadedLogsCount > 0) {
+        console.log(`☁️ Uploaded ${uploadedLogsCount} offline/local attendance logs to Supabase.`);
+      }
+
+
+      // 4. Sync Admin Users
+      const cloudAdmins = await supabaseDb.getAdmins();
+      for (const ca of cloudAdmins) {
+        const idx = this.data.admin_users.findIndex((a) => a.email.toLowerCase() === ca.email.toLowerCase());
+        if (idx >= 0) {
+          this.data.admin_users[idx] = ca;
+        } else {
+          this.data.admin_users.push(ca);
+        }
+      }
+      for (const la of this.data.admin_users) {
+        if (!cloudAdmins.some((ca) => ca.email.toLowerCase() === la.email.toLowerCase())) {
+          await supabaseDb.upsertAdmin(la);
+        }
+      }
+
+      // Sort logs latest first
+      this.data.attendance_logs.sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+
+      this.save();
+      console.log(
+        `✅ Cloud sync complete: ${this.data.employees.length} employees, ${this.data.attendance_logs.length} attendance logs active.`
+      );
+      return true;
+    } catch (err) {
+      console.error('⚠️ Cloud sync exception:', err);
+      return false;
+    } finally {
+      this.isCloudSyncing = false;
+    }
+  }
+
 
   // Organizations
   getOrganizations(): Organization[] {
@@ -258,7 +408,73 @@ class DatabaseManager {
     return false;
   }
 
+  // Password Reset & OTP Management
+  setPasswordResetOtp(idOrCode: string, otp: string, expiryMs: number = 10 * 60 * 1000): Employee | undefined {
+    const expiresAt = new Date(Date.now() + expiryMs).toISOString();
+    return this.updateEmployee(idOrCode, {
+      resetOtp: otp,
+      resetOtpExpiresAt: expiresAt,
+      resetOtpAttempts: 0,
+    });
+  }
+
+  verifyPasswordResetOtp(
+    idOrCode: string,
+    otp: string
+  ): { isValid: boolean; employee?: Employee; error?: string } {
+    const emp =
+      this.getEmployeeById(idOrCode) ||
+      this.getEmployeeByCode(idOrCode) ||
+      this.getEmployeeByEmail(idOrCode);
+
+    if (!emp) {
+      return { isValid: false, error: 'Employee account not found.' };
+    }
+
+    if (!emp.resetOtp || !emp.resetOtpExpiresAt) {
+      return { isValid: false, error: 'No active password reset request found. Please request a new code.' };
+    }
+
+    const expiresTime = new Date(emp.resetOtpExpiresAt).getTime();
+    if (Date.now() > expiresTime) {
+      return { isValid: false, error: 'Verification code has expired (valid for 10 minutes). Please request a new one.' };
+    }
+
+    // Rate-limiting failed attempts
+    const attempts = (emp.resetOtpAttempts || 0) + 1;
+    if (attempts > 5) {
+      this.clearPasswordResetOtp(emp.id);
+      return { isValid: false, error: 'Too many incorrect attempts. Please request a new verification code.' };
+    }
+
+    if (emp.resetOtp.trim() !== otp.trim()) {
+      this.updateEmployee(emp.id, { resetOtpAttempts: attempts });
+      return { isValid: false, error: `Invalid verification code. ${5 - attempts} attempts remaining.` };
+    }
+
+    return { isValid: true, employee: emp };
+  }
+
+  clearPasswordResetOtp(idOrCode: string): Employee | undefined {
+    return this.updateEmployee(idOrCode, {
+      resetOtp: undefined,
+      resetOtpExpiresAt: undefined,
+      resetOtpAttempts: 0,
+    });
+  }
+
+  resetEmployeePassword(idOrCode: string, newPasswordHash: string): Employee | undefined {
+    return this.updateEmployee(idOrCode, {
+      passwordHash: newPasswordHash,
+      resetOtp: undefined,
+      resetOtpExpiresAt: undefined,
+      resetOtpAttempts: 0,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
   // Attendance Logs
+
   getAttendanceLogs(filter?: {
     orgId?: string;
     employeeId?: string;

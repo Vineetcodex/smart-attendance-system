@@ -106,6 +106,8 @@ export class AttendanceController {
             faceEmbeddings: p.faceEmbeddings || (p.faceEmbedding ? [p.faceEmbedding] : (faceEmbedding ? [faceEmbedding] : [])),
             photoUrl: p.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(p.fullName || code)}`,
             isActive: true,
+            isApproved: false,
+            approvalStatus: 'PENDING',
             shiftStart: p.shiftStart || '09:00',
             shiftEnd: p.shiftEnd || '18:00',
             createdAt: new Date().toISOString(),

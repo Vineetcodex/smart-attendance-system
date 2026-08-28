@@ -34,7 +34,15 @@ import {
   ExternalLink,
   Clock,
   Hourglass,
+  Mail,
+  KeyRound,
+  Eye,
+  EyeOff,
+  Send,
+  Key,
 } from 'lucide-react';
+
+
 import {
   api,
   Employee,
@@ -185,6 +193,79 @@ export const MobileApp: React.FC = () => {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // -------------------------------------------------------------
+  // FORGOT PASSWORD VIA GMAIL / OTP MODAL STATE
+  // -------------------------------------------------------------
+  const [forgotPasswordModal, setForgotPasswordModal] = useState<{
+    isOpen: boolean;
+    step: 'IDENTIFY' | 'OTP' | 'NEW_PASSWORD' | 'SUCCESS';
+    identifier: string;
+    otp: string;
+    newPassword: string;
+    confirmPassword: string;
+    maskedEmail: string;
+    employeeName: string;
+    employeeCode: string;
+    loading: boolean;
+    error: string | null;
+    resendCooldown: number;
+    showPassword: boolean;
+    isDemoFallback?: boolean;
+    demoOtp?: string;
+  }>({
+    isOpen: false,
+    step: 'IDENTIFY',
+    identifier: '',
+    otp: '',
+    newPassword: '',
+    confirmPassword: '',
+    maskedEmail: '',
+    employeeName: '',
+    employeeCode: '',
+    loading: false,
+    error: null,
+    resendCooldown: 0,
+    showPassword: false,
+  });
+
+  // Resend OTP Cooldown Timer Effect
+  useEffect(() => {
+    let interval: any = null;
+    if (forgotPasswordModal.isOpen && forgotPasswordModal.resendCooldown > 0) {
+      interval = setInterval(() => {
+        setForgotPasswordModal((prev) => ({
+          ...prev,
+          resendCooldown: Math.max(0, prev.resendCooldown - 1),
+        }));
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [forgotPasswordModal.isOpen, forgotPasswordModal.resendCooldown]);
+
+  // -------------------------------------------------------------
+  // IN-PORTAL CHANGE PASSWORD MODAL STATE
+  // -------------------------------------------------------------
+  const [changePasswordModal, setChangePasswordModal] = useState<{
+    isOpen: boolean;
+    currentPassword: string;
+    newPassword: string;
+    confirmPassword: string;
+    loading: boolean;
+    error: string | null;
+    showPasswords: boolean;
+  }>({
+    isOpen: false,
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+    loading: false,
+    error: null,
+    showPasswords: false,
+  });
+
 
   // -------------------------------------------------------------
   // 3. DAILY ATTENDANCE CAMERA (Dual-Step: Master QR Scan ➔ Biometric Face ID)
@@ -691,6 +772,17 @@ export const MobileApp: React.FC = () => {
   }, [org, stopLocationWatch]);
 
   const handleStartAttendanceFlow = async (type: 'CHECK_IN' | 'CHECK_OUT') => {
+    if (!currentEmp) {
+      showToast('⚠️ Please sign in first.');
+      return;
+    }
+
+    if (currentEmp.approvalStatus === 'PENDING' || currentEmp.isApproved === false) {
+      playAudioFeedback('ALERT');
+      showToast('⏳ Account Pending Admin Approval. You cannot mark attendance yet.');
+      return;
+    }
+
     setPunchType(type);
     setVerifyResult(null);
     setAttendanceStep('QR_SCAN');
@@ -1286,8 +1378,8 @@ export const MobileApp: React.FC = () => {
           capturedPoses.straight?.photoUrl ||
           `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(signupFullName.trim())}`,
         isActive: true,
-        isApproved: true,
-        approvalStatus: 'APPROVED',
+        isApproved: false,
+        approvalStatus: 'PENDING',
         shiftStart: signupShiftStart,
         shiftEnd: signupShiftEnd,
         createdAt: new Date().toISOString(),
@@ -1298,14 +1390,15 @@ export const MobileApp: React.FC = () => {
       localEmployees.push(fallbackEmp);
       localStorage.setItem('local_employees', JSON.stringify(localEmployees));
       localStorage.setItem('employee_user', JSON.stringify(fallbackEmp));
-      localStorage.setItem('employee_token', 'local_token_' + Date.now());
+      localStorage.removeItem('employee_token');
 
-      playAudioFeedback('SUCCESS');
+      playAudioFeedback('STEP');
       setCurrentEmp(fallbackEmp);
-      showToast(`🎉 Registration Complete! Welcome, ${fallbackEmp.fullName}!`);
+      showToast(`✅ Registration Submitted! Waiting for Admin Approval.`);
     } finally {
       setIsSigningUp(false);
     }
+
   };
 
   // -------------------------------------------------------------
@@ -1388,6 +1481,181 @@ export const MobileApp: React.FC = () => {
   };
 
   // -------------------------------------------------------------
+  // FORGOT PASSWORD FLOW HANDLERS (GMAIL / OTP)
+  // -------------------------------------------------------------
+  const handleStartForgotPassword = (prefill?: string) => {
+    setForgotPasswordModal({
+      isOpen: true,
+      step: 'IDENTIFY',
+      identifier: prefill || loginIdentifier || '',
+      otp: '',
+      newPassword: '',
+      confirmPassword: '',
+      maskedEmail: '',
+      employeeName: '',
+      employeeCode: '',
+      loading: false,
+      error: null,
+      resendCooldown: 0,
+      showPassword: false,
+    });
+  };
+
+  const handleRequestResetOtp = async () => {
+    const raw = forgotPasswordModal.identifier.trim();
+    if (!raw) {
+      setForgotPasswordModal((prev) => ({ ...prev, error: 'Please enter your Employee ID (e.g. DRP01) or registered email.' }));
+      return;
+    }
+
+    setForgotPasswordModal((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const res = await api.requestPasswordReset(raw);
+      if (res.success && res.data) {
+        playAudioFeedback('STEP');
+        setForgotPasswordModal((prev) => ({
+          ...prev,
+          step: 'OTP',
+          loading: false,
+          maskedEmail: res.data?.emailMasked || 'your email',
+          employeeName: res.data?.fullName || '',
+          employeeCode: res.data?.employeeCode || raw.toUpperCase(),
+          resendCooldown: 60,
+          isDemoFallback: res.data?.isDemoFallback,
+          demoOtp: res.data?.demoOtp,
+          error: null,
+        }));
+        showToast(`✉️ Verification code sent to ${res.data.emailMasked}`);
+      } else {
+        setForgotPasswordModal((prev) => ({ ...prev, loading: false, error: res.message || 'Failed to request reset OTP.' }));
+      }
+    } catch (err: any) {
+      setForgotPasswordModal((prev) => ({
+        ...prev,
+        loading: false,
+        error: err.response?.data?.message || err.message || 'Error requesting password reset.',
+      }));
+    }
+  };
+
+  const handleVerifyResetOtp = async () => {
+    const otp = forgotPasswordModal.otp.trim();
+    if (!otp || otp.length < 6) {
+      setForgotPasswordModal((prev) => ({ ...prev, error: 'Please enter the full 6-digit verification code.' }));
+      return;
+    }
+
+    setForgotPasswordModal((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const res = await api.verifyResetOtp(forgotPasswordModal.identifier, otp);
+      if (res.success) {
+        playAudioFeedback('STEP');
+        setForgotPasswordModal((prev) => ({
+          ...prev,
+          step: 'NEW_PASSWORD',
+          loading: false,
+          error: null,
+        }));
+        showToast('✅ Code verified! Set your new password.');
+      } else {
+        setForgotPasswordModal((prev) => ({ ...prev, loading: false, error: res.message || 'Invalid verification code.' }));
+      }
+    } catch (err: any) {
+      setForgotPasswordModal((prev) => ({
+        ...prev,
+        loading: false,
+        error: err.response?.data?.message || err.message || 'Failed to verify code.',
+      }));
+    }
+  };
+
+  const handleCompletePasswordReset = async () => {
+    const { identifier, otp, newPassword, confirmPassword } = forgotPasswordModal;
+    if (!newPassword || newPassword.length < 6) {
+      setForgotPasswordModal((prev) => ({ ...prev, error: 'Password must be at least 6 characters long.' }));
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setForgotPasswordModal((prev) => ({ ...prev, error: 'Passwords do not match. Please re-check.' }));
+      return;
+    }
+
+    setForgotPasswordModal((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const res = await api.resetPasswordWithOtp(identifier, otp, newPassword);
+      if (res.success) {
+        playAudioFeedback('SUCCESS');
+        setForgotPasswordModal((prev) => ({
+          ...prev,
+          step: 'SUCCESS',
+          loading: false,
+          error: null,
+        }));
+        setLoginIdentifier(forgotPasswordModal.employeeCode || identifier);
+        setLoginPassword(newPassword);
+        showToast('🎉 Password reset successfully!');
+      } else {
+        setForgotPasswordModal((prev) => ({ ...prev, loading: false, error: res.message || 'Failed to reset password.' }));
+      }
+    } catch (err: any) {
+      setForgotPasswordModal((prev) => ({
+        ...prev,
+        loading: false,
+        error: err.response?.data?.message || err.message || 'Failed to reset password.',
+      }));
+    }
+  };
+
+  const handleChangePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const { currentPassword, newPassword, confirmPassword } = changePasswordModal;
+
+    if (!currentPassword) {
+      setChangePasswordModal((prev) => ({ ...prev, error: 'Please enter your current password.' }));
+      return;
+    }
+    if (!newPassword || newPassword.length < 6) {
+      setChangePasswordModal((prev) => ({ ...prev, error: 'New password must be at least 6 characters long.' }));
+      return;
+    }
+    if (currentPassword === newPassword) {
+      setChangePasswordModal((prev) => ({ ...prev, error: 'New password cannot be identical to your current password.' }));
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setChangePasswordModal((prev) => ({ ...prev, error: 'New passwords do not match.' }));
+      return;
+    }
+
+    setChangePasswordModal((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const res = await api.changePassword(currentPassword, newPassword);
+      if (res.success) {
+        playAudioFeedback('SUCCESS');
+        setChangePasswordModal({
+          isOpen: false,
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: '',
+          loading: false,
+          error: null,
+          showPasswords: false,
+        });
+        showToast('🔐 Password changed successfully!');
+      } else {
+        setChangePasswordModal((prev) => ({ ...prev, loading: false, error: res.message || 'Failed to change password.' }));
+      }
+    } catch (err: any) {
+      setChangePasswordModal((prev) => ({
+        ...prev,
+        loading: false,
+        error: err.response?.data?.message || err.message || 'Failed to change password.',
+      }));
+    }
+  };
+
+
+  // -------------------------------------------------------------
   // 3. ATTENDANCE VERIFICATION SUBMISSION (QR + FACE BIOMETRICS)
   // -------------------------------------------------------------
   const handleTriggerAttendanceVerification = async (
@@ -1395,6 +1663,11 @@ export const MobileApp: React.FC = () => {
     qrPayloadOverride?: string | null
   ) => {
     if (!currentEmp) return;
+    if (currentEmp.approvalStatus === 'PENDING' || currentEmp.isApproved === false) {
+      playAudioFeedback('ALERT');
+      showToast('⏳ Account Pending Admin Approval. Attendance cannot be recorded.');
+      return;
+    }
     if (isProcessing) return;
 
     // Synchronously lock to prevent duplicate async bursts
@@ -2210,7 +2483,16 @@ export const MobileApp: React.FC = () => {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-300">Password</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-slate-300">Password</label>
+                    <button
+                      type="button"
+                      onClick={() => handleStartForgotPassword(loginIdentifier)}
+                      className="text-[11px] text-emerald-400 hover:text-emerald-300 hover:underline font-medium transition"
+                    >
+                      Forgot Password?
+                    </button>
+                  </div>
                   <div className="relative">
                     <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                     <input
@@ -2223,6 +2505,7 @@ export const MobileApp: React.FC = () => {
                     />
                   </div>
                 </div>
+
 
                 <button
                   type="submit"
@@ -2723,6 +3006,38 @@ export const MobileApp: React.FC = () => {
                     <span className="text-white font-mono font-semibold">v{APP_VERSION}</span>
                   </div>
                 </div>
+
+                {/* Security & Password Management Card */}
+                <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-bold text-white flex items-center gap-1.5">
+                        <KeyRound className="w-3.5 h-3.5 text-emerald-400" />
+                        Security & Password
+                      </p>
+                      <p className="text-[11px] text-slate-400">Update your employee sign-in password</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setChangePasswordModal({
+                        isOpen: true,
+                        currentPassword: '',
+                        newPassword: '',
+                        confirmPassword: '',
+                        loading: false,
+                        error: null,
+                        showPasswords: false,
+                      })
+                    }
+                    className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition flex items-center justify-center gap-2 border border-slate-700/60"
+                  >
+                    <Lock className="w-3.5 h-3.5 text-emerald-400" />
+                    Change Sign-In Password
+                  </button>
+                </div>
+
 
                 <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2 text-xs">
                   <div className="flex items-center justify-between">
@@ -3555,6 +3870,464 @@ export const MobileApp: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* =========================================================================
+          MODAL: FORGOT PASSWORD VIA GMAIL & 6-DIGIT OTP
+         ========================================================================= */}
+      {forgotPasswordModal.isOpen && (
+
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+          <div className="w-full max-w-md bg-slate-900 border-2 border-emerald-500/40 rounded-3xl p-6 shadow-2xl shadow-emerald-950/50 space-y-5 text-center relative overflow-hidden">
+            {/* Ambient Glow */}
+            <div className="absolute -top-16 -left-16 w-36 h-36 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-16 -right-16 w-36 h-36 bg-teal-500/20 rounded-full blur-3xl pointer-events-none" />
+
+            {/* Header Icon */}
+            <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20 text-emerald-400">
+              {forgotPasswordModal.step === 'SUCCESS' ? (
+                <CheckCircle2 className="w-7 h-7 text-emerald-400 animate-bounce" />
+              ) : forgotPasswordModal.step === 'OTP' ? (
+                <Mail className="w-7 h-7 text-emerald-400 animate-pulse" />
+              ) : forgotPasswordModal.step === 'NEW_PASSWORD' ? (
+                <KeyRound className="w-7 h-7 text-emerald-400" />
+              ) : (
+                <Lock className="w-7 h-7 text-emerald-400" />
+              )}
+            </div>
+
+            {/* Step Header */}
+            <div className="space-y-1">
+              <h3 className="text-lg font-extrabold text-white tracking-tight">
+                {forgotPasswordModal.step === 'IDENTIFY' && 'Reset Employee Password'}
+                {forgotPasswordModal.step === 'OTP' && 'Enter Verification Code'}
+                {forgotPasswordModal.step === 'NEW_PASSWORD' && 'Create New Password'}
+                {forgotPasswordModal.step === 'SUCCESS' && 'Password Updated!'}
+              </h3>
+              <p className="text-xs text-slate-400">
+                {forgotPasswordModal.step === 'IDENTIFY' && 'Enter your Employee ID or registered email to receive an OTP.'}
+                {forgotPasswordModal.step === 'OTP' && (
+                  <>
+                    We sent a 6-digit code to{' '}
+                    <span className="text-emerald-400 font-mono font-semibold">
+                      {forgotPasswordModal.maskedEmail}
+                    </span>
+                  </>
+                )}
+                {forgotPasswordModal.step === 'NEW_PASSWORD' && 'Choose a strong password with at least 6 characters.'}
+                {forgotPasswordModal.step === 'SUCCESS' && 'Your account password has been updated successfully.'}
+              </p>
+            </div>
+
+            {/* Error Message */}
+            {forgotPasswordModal.error && (
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2 text-left">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                <span>{forgotPasswordModal.error}</span>
+              </div>
+            )}
+
+            {/* Demo Mode Notice */}
+            {forgotPasswordModal.isDemoFallback && forgotPasswordModal.demoOtp && forgotPasswordModal.step === 'OTP' && (
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs text-left space-y-1">
+                <p className="font-bold flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  Local Development / Offline Helper:
+                </p>
+                <p className="text-[11px] text-slate-300">
+                  Your generated 6-digit OTP code is:{' '}
+                  <span className="font-mono font-bold text-amber-300 px-1.5 py-0.5 rounded bg-amber-950/60 border border-amber-500/40">
+                    {forgotPasswordModal.demoOtp}
+                  </span>
+                </p>
+              </div>
+            )}
+
+            {/* STEP 1: IDENTIFY */}
+            {forgotPasswordModal.step === 'IDENTIFY' && (
+              <div className="space-y-4 text-left">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-300">Employee ID or Email</label>
+                  <div className="relative">
+                    <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                      type="text"
+                      autoFocus
+                      required
+                      placeholder="e.g. DRP01 or employee@drptech.com"
+                      value={forgotPasswordModal.identifier}
+                      onChange={(e) =>
+                        setForgotPasswordModal((prev) => ({
+                          ...prev,
+                          identifier: e.target.value,
+                          error: null,
+                        }))
+                      }
+                      className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={forgotPasswordModal.loading}
+                  onClick={handleRequestResetOtp}
+                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+                >
+                  {forgotPasswordModal.loading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Sending Verification Code...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      Send 6-Digit OTP via Email ➔
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
+            {/* STEP 2: OTP ENTRY */}
+            {forgotPasswordModal.step === 'OTP' && (
+              <div className="space-y-4 text-left">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-300">6-Digit Verification Code</label>
+                  <div className="relative">
+                    <Key className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                      type="text"
+                      autoFocus
+                      maxLength={6}
+                      placeholder="e.g. 849201"
+                      value={forgotPasswordModal.otp}
+                      onChange={(e) =>
+                        setForgotPasswordModal((prev) => ({
+                          ...prev,
+                          otp: e.target.value.replace(/\D/g, '').slice(0, 6),
+                          error: null,
+                        }))
+                      }
+                      className="w-full pl-9 pr-3 py-3 rounded-xl bg-slate-950 border border-slate-800 text-emerald-400 font-mono text-center font-bold tracking-[8px] text-lg focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-xs">
+                  <button
+                    type="button"
+                    disabled={forgotPasswordModal.resendCooldown > 0 || forgotPasswordModal.loading}
+                    onClick={handleRequestResetOtp}
+                    className="text-slate-400 hover:text-emerald-400 disabled:opacity-40 transition flex items-center gap-1 text-[11px]"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${forgotPasswordModal.loading ? 'animate-spin' : ''}`} />
+                    {forgotPasswordModal.resendCooldown > 0
+                      ? `Resend in ${forgotPasswordModal.resendCooldown}s`
+                      : 'Resend Code'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setForgotPasswordModal((prev) => ({ ...prev, step: 'IDENTIFY', error: null }))}
+                    className="text-slate-400 hover:text-white text-[11px]"
+                  >
+                    Change ID / Email
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={forgotPasswordModal.loading || forgotPasswordModal.otp.length < 6}
+                  onClick={handleVerifyResetOtp}
+                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+                >
+                  {forgotPasswordModal.loading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Verifying Code...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      Verify & Continue ➔
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
+            {/* STEP 3: CREATE NEW PASSWORD */}
+            {forgotPasswordModal.step === 'NEW_PASSWORD' && (
+              <div className="space-y-4 text-left">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-300">New Password</label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                      type={forgotPasswordModal.showPassword ? 'text' : 'password'}
+                      autoFocus
+                      required
+                      placeholder="Minimum 6 characters"
+                      value={forgotPasswordModal.newPassword}
+                      onChange={(e) =>
+                        setForgotPasswordModal((prev) => ({
+                          ...prev,
+                          newPassword: e.target.value,
+                          error: null,
+                        }))
+                      }
+                      className="w-full pl-9 pr-10 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setForgotPasswordModal((prev) => ({
+                          ...prev,
+                          showPassword: !prev.showPassword,
+                        }))
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                    >
+                      {forgotPasswordModal.showPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-300">Confirm New Password</label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                      type={forgotPasswordModal.showPassword ? 'text' : 'password'}
+                      required
+                      placeholder="Re-enter new password"
+                      value={forgotPasswordModal.confirmPassword}
+                      onChange={(e) =>
+                        setForgotPasswordModal((prev) => ({
+                          ...prev,
+                          confirmPassword: e.target.value,
+                          error: null,
+                        }))
+                      }
+                      className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={
+                    forgotPasswordModal.loading ||
+                    forgotPasswordModal.newPassword.length < 6 ||
+                    forgotPasswordModal.newPassword !== forgotPasswordModal.confirmPassword
+                  }
+                  onClick={handleCompletePasswordReset}
+                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+                >
+                  {forgotPasswordModal.loading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Updating Password...
+                    </>
+                  ) : (
+                    <>
+                      <KeyRound className="w-4 h-4" />
+                      Save New Password & Finish 🚀
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
+            {/* STEP 4: SUCCESS */}
+            {forgotPasswordModal.step === 'SUCCESS' && (
+              <div className="space-y-4">
+                <div className="p-4 bg-emerald-950/40 rounded-2xl border border-emerald-500/40 text-emerald-300 text-xs space-y-1.5">
+                  <p className="font-bold text-sm text-white">All Set!</p>
+                  <p>Your password has been changed. Your login form has been filled with your new credentials.</p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setForgotPasswordModal((prev) => ({ ...prev, isOpen: false }))}
+                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2 active:scale-95"
+                >
+                  <LogIn className="w-4 h-4" />
+                  Sign In to Employee Portal Now ➔
+                </button>
+              </div>
+            )}
+
+            {/* Close / Dismiss */}
+            {forgotPasswordModal.step !== 'SUCCESS' && (
+              <button
+                type="button"
+                onClick={() => setForgotPasswordModal((prev) => ({ ...prev, isOpen: false }))}
+                className="w-full py-2 rounded-xl text-slate-400 hover:text-white text-xs font-semibold transition"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          MODAL: IN-PORTAL CHANGE PASSWORD (AUTHENTICATED)
+         ========================================================================= */}
+      {changePasswordModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+          <div className="w-full max-w-md bg-slate-900 border-2 border-emerald-500/40 rounded-3xl p-6 shadow-2xl shadow-emerald-950/50 space-y-5 text-center relative overflow-hidden">
+            {/* Ambient Glow */}
+            <div className="absolute -top-16 -left-16 w-36 h-36 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-16 -right-16 w-36 h-36 bg-teal-500/20 rounded-full blur-3xl pointer-events-none" />
+
+            {/* Header Icon */}
+            <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20 text-emerald-400">
+              <KeyRound className="w-7 h-7 text-emerald-400" />
+            </div>
+
+            {/* Title */}
+            <div className="space-y-1">
+              <h3 className="text-lg font-extrabold text-white tracking-tight">
+                Change Sign-In Password
+              </h3>
+              <p className="text-xs text-slate-400">
+                Update your account password for{' '}
+                <span className="text-emerald-400 font-semibold">{currentEmp?.fullName || 'your profile'}</span>
+              </p>
+            </div>
+
+            {/* Error Message */}
+            {changePasswordModal.error && (
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2 text-left">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                <span>{changePasswordModal.error}</span>
+              </div>
+            )}
+
+            {/* Form */}
+            <form onSubmit={handleChangePasswordSubmit} className="space-y-4 text-left">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-300">Current Password</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type={changePasswordModal.showPasswords ? 'text' : 'password'}
+                    required
+                    autoFocus
+                    placeholder="Enter your current password"
+                    value={changePasswordModal.currentPassword}
+                    onChange={(e) =>
+                      setChangePasswordModal((prev) => ({
+                        ...prev,
+                        currentPassword: e.target.value,
+                        error: null,
+                      }))
+                    }
+                    className="w-full pl-9 pr-10 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setChangePasswordModal((prev) => ({
+                        ...prev,
+                        showPasswords: !prev.showPasswords,
+                      }))
+                    }
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  >
+                    {changePasswordModal.showPasswords ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-300">New Password</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type={changePasswordModal.showPasswords ? 'text' : 'password'}
+                    required
+                    placeholder="Minimum 6 characters"
+                    value={changePasswordModal.newPassword}
+                    onChange={(e) =>
+                      setChangePasswordModal((prev) => ({
+                        ...prev,
+                        newPassword: e.target.value,
+                        error: null,
+                      }))
+                    }
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-300">Confirm New Password</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type={changePasswordModal.showPasswords ? 'text' : 'password'}
+                    required
+                    placeholder="Re-enter new password"
+                    value={changePasswordModal.confirmPassword}
+                    onChange={(e) =>
+                      setChangePasswordModal((prev) => ({
+                        ...prev,
+                        confirmPassword: e.target.value,
+                        error: null,
+                      }))
+                    }
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={changePasswordModal.loading}
+                className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+              >
+                {changePasswordModal.loading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Updating Password...
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    Update Password 🔐
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setChangePasswordModal({
+                    isOpen: false,
+                    currentPassword: '',
+                    newPassword: '',
+                    confirmPassword: '',
+                    loading: false,
+                    error: null,
+                    showPasswords: false,
+                  })
+                }
+                className="w-full py-2 rounded-xl text-slate-400 hover:text-white text-xs font-semibold transition"
+              >
+                Cancel
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

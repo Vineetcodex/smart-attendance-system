@@ -15,4 +15,11 @@ export const config = {
   supabaseUrl: process.env.SUPABASE_URL || 'https://tbwljslhmcgrxfbzddjg.supabase.co',
   supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_1F37cUkr71KYkpdkWpM2Ig_DRajz0P-',
   supabaseSecretKey: process.env.SUPABASE_SECRET_KEY || '',
+  smtpHost: process.env.SMTP_HOST || 'smtp.gmail.com',
+  smtpPort: parseInt(process.env.SMTP_PORT || '587', 10),
+  smtpSecure: process.env.SMTP_SECURE === 'true',
+  smtpUser: process.env.SMTP_USER || '',
+  smtpPass: process.env.SMTP_PASS || '',
+  smtpFrom: process.env.SMTP_FROM || 'DRP Technology Security <no-reply@drptech.com>',
 };
+

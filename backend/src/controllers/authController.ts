@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { db } from '../db/database.js';
 import { config } from '../config/env.js';
 import { AuthRequest } from '../middleware/authMiddleware.js';
+import { MailService } from '../services/mailService.js';
 
 export class AuthController {
   /**
@@ -249,10 +250,9 @@ export class AuthController {
           ? multiPoseVectors[0]
           : FaceService.generateEmbeddingFromSeed(`${code}-${fullName}`);
 
-      // If already exists, update profile
+      // If already exists, update profile and set to PENDING admin approval
       const existingEmp = db.getEmployeeByCode(code) || db.getEmployeeByEmail(email);
       if (existingEmp) {
-        const isAlreadyApproved = existingEmp.isApproved !== false && existingEmp.approvalStatus !== 'PENDING' && existingEmp.approvalStatus !== 'REJECTED';
         const updated = db.updateEmployee(existingEmp.id, {
           fullName: fullName.trim(),
           email: email.toLowerCase().trim(),
@@ -265,45 +265,25 @@ export class AuthController {
           shiftEnd: shiftEnd || 'Anytime',
           department: (department || 'Engineering').trim(),
           position: (position || 'Software Engineer').trim(),
+          isApproved: false,
+          approvalStatus: 'PENDING',
+          approvedAt: undefined,
+          approvedBy: undefined,
+          rejectionReason: undefined,
         });
 
         const empData = updated || existingEmp;
         const { passwordHash: _, ...sanitized } = empData;
 
-        if (!isAlreadyApproved) {
-          return res.status(200).json({
-            success: true,
-            isPendingApproval: true,
-            approvalStatus: 'PENDING',
-            message: 'Profile updated. Waiting for admin approval.',
-            data: {
-              employee: sanitized,
-              isPendingApproval: true,
-              approvalStatus: 'PENDING',
-              organization: org,
-            },
-          });
-        }
-
-        const token = jwt.sign(
-          {
-            id: existingEmp.id,
-            email: existingEmp.email,
-            employeeCode: existingEmp.employeeCode,
-            role: 'EMPLOYEE',
-            orgId: existingEmp.orgId,
-            fullName: existingEmp.fullName,
-          },
-          config.jwtSecret,
-          { expiresIn: '30d' }
-        );
-
         return res.status(200).json({
           success: true,
-          message: 'Account and Face ID updated successfully!',
+          isPendingApproval: true,
+          approvalStatus: 'PENDING',
+          message: 'Registration and facial baseline enrollment submitted successfully! Your account is pending administrator approval before you can sign in and mark attendance.',
           data: {
-            token,
             employee: sanitized,
+            isPendingApproval: true,
+            approvalStatus: 'PENDING',
             organization: org,
           },
         });
@@ -342,10 +322,8 @@ export class AuthController {
         faceEmbeddings: multiPoseVectors,
         photoUrl: photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(fullName)}`,
         isActive: true,
-        isApproved: true,
-        approvalStatus: 'APPROVED' as const,
-        approvedAt: new Date().toISOString(),
-        approvedBy: 'Auto-Approved System',
+        isApproved: false,
+        approvalStatus: 'PENDING' as const,
         shiftStart,
         shiftEnd,
         createdAt: new Date().toISOString(),
@@ -354,31 +332,17 @@ export class AuthController {
 
       db.createEmployee(newEmployee);
 
-      const token = jwt.sign(
-        {
-          id: newEmployee.id,
-          email: newEmployee.email,
-          employeeCode: newEmployee.employeeCode,
-          role: 'EMPLOYEE',
-          orgId: newEmployee.orgId,
-          fullName: newEmployee.fullName,
-        },
-        config.jwtSecret,
-        { expiresIn: '30d' }
-      );
-
       const { passwordHash: _, ...sanitized } = newEmployee;
 
       return res.status(201).json({
         success: true,
-        isApproved: true,
-        approvalStatus: 'APPROVED',
-        message: 'Registration and facial baseline enrollment successful! You can now sign in and mark attendance daily.',
+        isPendingApproval: true,
+        approvalStatus: 'PENDING',
+        message: 'Registration and facial baseline enrollment submitted successfully! Your account is pending administrator approval before you can sign in and mark attendance.',
         data: {
-          token,
           employee: sanitized,
-          isApproved: true,
-          approvalStatus: 'APPROVED',
+          isPendingApproval: true,
+          approvalStatus: 'PENDING',
           organization: org,
         },
       });
@@ -386,6 +350,7 @@ export class AuthController {
       console.error('Employee signup error:', err);
       return res.status(500).json({ success: false, message: `Registration error: ${err.message}` });
     }
+
   }
 
   /**
@@ -478,4 +443,298 @@ export class AuthController {
       return res.status(500).json({ success: false, message: err.message });
     }
   }
+
+  /**
+   * Request Password Reset OTP via Email/Gmail (Step 1)
+   */
+  static async forgotPassword(req: Request, res: Response) {
+    try {
+      const { identifier } = req.body;
+      const raw = (identifier || '').toString().trim();
+      if (!raw) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please enter your Employee ID (e.g. DRP01) or registered email.',
+        });
+      }
+
+      const cleanCode = raw.toUpperCase().replace(/\s+/g, '');
+      let employee =
+        db.getEmployeeByCode(raw) ||
+        db.getEmployeeByCode(cleanCode) ||
+        db.getEmployeeByEmail(raw) ||
+        db.getEmployeeById(raw);
+
+      if (!employee) {
+        const all = db.getEmployees();
+        employee = all.find(
+          (e) =>
+            e.employeeCode.toUpperCase() === raw.toUpperCase() ||
+            e.employeeCode.toUpperCase() === cleanCode ||
+            e.email.toLowerCase() === raw.toLowerCase()
+        );
+      }
+
+      if (!employee) {
+        try {
+          const { supabaseDb } = await import('../db/supabaseDb.js');
+          const supEmp =
+            (await supabaseDb.getEmployeeByCode(raw)) ||
+            (await supabaseDb.getEmployeeByCode(cleanCode)) ||
+            (await supabaseDb.getEmployeeById(raw));
+          if (supEmp) {
+            employee = supEmp;
+            db.createEmployee(supEmp);
+          }
+        } catch (_) {}
+      }
+
+      if (!employee) {
+        return res.status(404).json({
+          success: false,
+          message: `No account found for "${raw}". Please check your Employee ID or email.`,
+        });
+      }
+
+      if (!employee.isActive) {
+        return res.status(403).json({
+          success: false,
+          message: 'This employee account is currently deactivated. Please contact your administrator.',
+        });
+      }
+
+      // Generate 6-digit cryptographic-safe OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+      // Store in DB with 10-minute expiry
+      db.setPasswordResetOtp(employee.id, otp, 10 * 60 * 1000);
+
+      // Dispatch Security Email via MailService / Gmail SMTP
+      const mailResult = await MailService.sendPasswordResetOtp(
+        employee.email,
+        employee.fullName,
+        employee.employeeCode,
+        otp
+      );
+
+      const maskedEmail = MailService.maskEmail(employee.email);
+
+      return res.status(200).json({
+        success: true,
+        message: `A 6-digit verification code has been sent to ${maskedEmail}.`,
+        data: {
+          employeeCode: employee.employeeCode,
+          fullName: employee.fullName,
+          emailMasked: maskedEmail,
+          emailSent: mailResult.emailSent,
+          isDemoFallback: mailResult.isDemoFallback,
+          demoOtp: mailResult.isDemoFallback ? otp : undefined,
+        },
+      });
+    } catch (err: any) {
+      console.error('Forgot password error:', err);
+      return res.status(500).json({ success: false, message: `Password reset request failed: ${err.message}` });
+    }
+  }
+
+  /**
+   * Verify Password Reset OTP (Step 2 - Validation)
+   */
+  static async verifyResetOtp(req: Request, res: Response) {
+    try {
+      const { identifier, otp } = req.body;
+      const rawId = (identifier || '').toString().trim();
+      const rawOtp = (otp || '').toString().trim();
+
+      if (!rawId || !rawOtp) {
+        return res.status(400).json({
+          success: false,
+          message: 'Employee ID/Email and 6-digit verification code are required.',
+        });
+      }
+
+      const verification = db.verifyPasswordResetOtp(rawId, rawOtp);
+      if (!verification.isValid) {
+        return res.status(400).json({
+          success: false,
+          message: verification.error || 'Invalid or expired verification code.',
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Verification code confirmed. You may now enter your new password.',
+        data: {
+          employeeCode: verification.employee?.employeeCode,
+          fullName: verification.employee?.fullName,
+        },
+      });
+    } catch (err: any) {
+      console.error('Verify reset OTP error:', err);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  }
+
+  /**
+   * Complete Password Reset with Verified OTP (Step 3)
+   */
+  static async resetPassword(req: Request, res: Response) {
+    try {
+      const { identifier, otp, newPassword } = req.body;
+      const rawId = (identifier || '').toString().trim();
+      const rawOtp = (otp || '').toString().trim();
+      const rawPass = (newPassword || '').toString().trim();
+
+      if (!rawId || !rawOtp || !rawPass) {
+        return res.status(400).json({
+          success: false,
+          message: 'Employee ID, verification code, and new password are required.',
+        });
+      }
+
+      if (rawPass.length < 6) {
+        return res.status(400).json({
+          success: false,
+          message: 'Password must be at least 6 characters long.',
+        });
+      }
+
+      const verification = db.verifyPasswordResetOtp(rawId, rawOtp);
+      if (!verification.isValid || !verification.employee) {
+        return res.status(400).json({
+          success: false,
+          message: verification.error || 'Invalid or expired verification code.',
+        });
+      }
+
+      const salt = await bcrypt.genSalt(10);
+      const passwordHash = await bcrypt.hash(rawPass, salt);
+
+      const updated = db.resetEmployeePassword(verification.employee.id, passwordHash);
+      if (!updated) {
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to update employee password in database.',
+        });
+      }
+
+      console.log(`🔑 Password successfully reset for employee ${updated.employeeCode} (${updated.fullName})`);
+
+      return res.status(200).json({
+        success: true,
+        message: 'Your password has been reset successfully! You can now sign in with your new password.',
+        data: {
+          employeeCode: updated.employeeCode,
+          fullName: updated.fullName,
+        },
+      });
+    } catch (err: any) {
+      console.error('Reset password error:', err);
+      return res.status(500).json({ success: false, message: `Password reset error: ${err.message}` });
+    }
+  }
+
+  /**
+   * In-Portal Change Password (Authenticated Session)
+   */
+  static async changePassword(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required.' });
+      }
+
+      const { currentPassword, newPassword } = req.body;
+      const curPass = (currentPassword || '').toString().trim();
+      const newPass = (newPassword || '').toString().trim();
+
+      if (!curPass || !newPass) {
+        return res.status(400).json({
+          success: false,
+          message: 'Current password and new password are required.',
+        });
+      }
+
+      if (newPass.length < 6) {
+        return res.status(400).json({
+          success: false,
+          message: 'New password must be at least 6 characters long.',
+        });
+      }
+
+      if (curPass === newPass) {
+        return res.status(400).json({
+          success: false,
+          message: 'New password cannot be identical to the current password.',
+        });
+      }
+
+      if (req.user.role === 'EMPLOYEE') {
+        const emp = db.getEmployeeById(req.user.id);
+        if (!emp) {
+          return res.status(404).json({ success: false, message: 'Employee profile not found.' });
+        }
+
+        let isMatch = false;
+        if (emp.passwordHash) {
+          try {
+            isMatch = await bcrypt.compare(curPass, emp.passwordHash);
+          } catch (_) {
+            isMatch = false;
+          }
+          if (!isMatch && (emp.passwordHash === curPass || (emp as any).password === curPass)) {
+            isMatch = true;
+          }
+        } else if ((emp as any).password) {
+          isMatch = (emp as any).password === curPass;
+        }
+
+        if (!isMatch) {
+          return res.status(401).json({
+            success: false,
+            message: 'Current password is incorrect. Please check and try again.',
+          });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(newPass, salt);
+
+        db.updateEmployee(emp.id, {
+          passwordHash,
+          updatedAt: new Date().toISOString(),
+        });
+
+        console.log(`🔐 Password changed by employee ${emp.employeeCode} (${emp.fullName})`);
+
+        return res.status(200).json({
+          success: true,
+          message: 'Password changed successfully! Please use your new password next time you log in.',
+        });
+      } else {
+        // Admin user change password
+        const admin = db.getAdminByEmail(req.user.email);
+        if (!admin) {
+          return res.status(404).json({ success: false, message: 'Admin account not found.' });
+        }
+
+        const isMatch = await bcrypt.compare(curPass, admin.passwordHash);
+        if (!isMatch) {
+          return res.status(401).json({ success: false, message: 'Current admin password is incorrect.' });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(newPass, salt);
+        admin.passwordHash = passwordHash;
+        db.save();
+
+        return res.status(200).json({
+          success: true,
+          message: 'Admin password updated successfully.',
+        });
+      }
+    } catch (err: any) {
+      console.error('Change password error:', err);
+      return res.status(500).json({ success: false, message: `Change password failed: ${err.message}` });
+    }
+  }
 }
+

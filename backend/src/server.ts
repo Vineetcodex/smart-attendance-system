@@ -111,35 +111,54 @@ if (webDistPath) {
 
 import os from 'os';
 
-// Auto-seed if database is empty, has no employees, or lacks default admin
-if (!db.getPrimaryOrganization() || db.getEmployees().length === 0 || !db.getAdminByEmail('admin@drptech.com')) {
-  seedDatabase().catch((err) => console.error('Error auto-seeding database:', err));
-}
+// Initialize Cloud Synchronization & Server Lifecycle
+async function startServer() {
+  try {
+    // 1. Rehydrate all employees and logs from Supabase Cloud on boot
+    await db.syncWithCloud();
 
-// Find local IPv4 addresses
-const networkInterfaces = os.networkInterfaces();
-const localIps: string[] = [];
-for (const iface of Object.values(networkInterfaces)) {
-  if (!iface) continue;
-  for (const alias of iface) {
-    if (alias.family === 'IPv4' && !alias.internal) {
-      localIps.push(alias.address);
+    // 2. Only auto-seed if both cloud and local database have zero employees or zero org
+    if (!db.getPrimaryOrganization() || db.getEmployees().length === 0 || !db.getAdminByEmail('admin@drptech.com')) {
+      await seedDatabase().catch((err) => console.error('Error auto-seeding database:', err));
+    }
+
+    // 3. Background heartbeat cloud sync (Every 5 minutes)
+    setInterval(() => {
+      db.syncWithCloud().catch((err) => console.warn('Background cloud sync warning:', err));
+    }, 5 * 60 * 1000);
+  } catch (err) {
+    console.error('Error during startup cloud sync:', err);
+  }
+
+  // Find local IPv4 addresses
+  const networkInterfaces = os.networkInterfaces();
+  const localIps: string[] = [];
+  for (const iface of Object.values(networkInterfaces)) {
+    if (!iface) continue;
+    for (const alias of iface) {
+      if (alias.family === 'IPv4' && !alias.internal) {
+        localIps.push(alias.address);
+      }
     }
   }
+
+  // Start Server
+  app.listen(config.port, '0.0.0.0', () => {
+    console.log(`=======================================================`);
+    console.log(`🚀 DRP Technology Attendance Server running on port ${config.port}`);
+    console.log(`🌐 Local URL:      http://localhost:${config.port}`);
+    for (const ip of localIps) {
+      console.log(`📱 Mobile APK URL: http://${ip}:${config.port}/api/v1`);
+    }
+    console.log(`📡 SSE Stream:     http://localhost:${config.port}/api/v1/attendance/stream`);
+    console.log(`🔑 Admin Login:    admin@drptech.com / admin123`);
+    console.log(`👤 Active Employees: ${db.getEmployees().length}`);
+    console.log(`📊 Active Logs:      ${db.getAttendanceLogs().length}`);
+    console.log(`=======================================================`);
+  });
 }
 
-// Start Server
-app.listen(config.port, '0.0.0.0', () => {
-  console.log(`=======================================================`);
-  console.log(`🚀 DRP Technology Attendance Server running on port ${config.port}`);
-  console.log(`🌐 Local URL:      http://localhost:${config.port}`);
-  for (const ip of localIps) {
-    console.log(`📱 Mobile APK URL: http://${ip}:${config.port}/api/v1`);
-  }
-  console.log(`📡 SSE Stream:     http://localhost:${config.port}/api/v1/attendance/stream`);
-  console.log(`🔑 Admin Login:    admin@drptech.com / admin123`);
-  console.log(`👤 Emp Login:      EMP-1001 / password123`);
-  console.log(`=======================================================`);
-});
+startServer();
 
 export default app;
+

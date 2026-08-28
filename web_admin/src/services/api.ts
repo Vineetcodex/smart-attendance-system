@@ -340,6 +340,10 @@ export const api = {
       return res.data;
     } catch (err: any) {
       if (err.response?.data?.isPendingApproval || err.response?.data?.isRejected) {
+        localStorage.removeItem('employee_token');
+        if (err.response.data.data?.employee) {
+          localStorage.setItem('employee_user', JSON.stringify(err.response.data.data.employee));
+        }
         return err.response.data;
       }
       if (err.response?.status === 401 || err.response?.status === 400) {
@@ -359,6 +363,7 @@ export const api = {
       );
       if (found) {
         if (found.approvalStatus === 'REJECTED') {
+          localStorage.removeItem('employee_token');
           return {
             success: false,
             isRejected: true,
@@ -367,6 +372,8 @@ export const api = {
           };
         }
         if (found.approvalStatus === 'PENDING' || found.isApproved === false) {
+          localStorage.removeItem('employee_token');
+          localStorage.setItem('employee_user', JSON.stringify(found));
           return {
             success: false,
             isPendingApproval: true,
@@ -415,6 +422,11 @@ export const api = {
       if (res.data.data?.token) {
         localStorage.setItem('employee_token', res.data.data.token);
         localStorage.setItem('employee_user', JSON.stringify(res.data.data.employee));
+      } else {
+        localStorage.removeItem('employee_token');
+        if (res.data.data?.employee) {
+          localStorage.setItem('employee_user', JSON.stringify(res.data.data.employee));
+        }
       }
       return res.data;
     } catch (err: any) {
@@ -516,7 +528,76 @@ export const api = {
     }
   },
 
+  async requestPasswordReset(identifier: string): Promise<{
+    success: boolean;
+    message: string;
+    data?: {
+      employeeCode: string;
+      fullName: string;
+      emailMasked: string;
+      emailSent: boolean;
+      isDemoFallback?: boolean;
+      demoOtp?: string;
+    };
+  }> {
+    const raw = (identifier || '').trim();
+    try {
+      const res = await apiClient.post('/auth/forgot-password', { identifier: raw });
+      return res.data;
+    } catch (err: any) {
+      if (err.response?.data) return err.response.data;
+      throw err;
+    }
+  },
+
+  async verifyResetOtp(identifier: string, otp: string): Promise<{
+    success: boolean;
+    message: string;
+    data?: { employeeCode?: string; fullName?: string };
+  }> {
+    try {
+      const res = await apiClient.post('/auth/verify-reset-otp', { identifier, otp });
+      return res.data;
+    } catch (err: any) {
+      if (err.response?.data) return err.response.data;
+      throw err;
+    }
+  },
+
+  async resetPasswordWithOtp(identifier: string, otp: string, newPassword: string): Promise<{
+    success: boolean;
+    message: string;
+    data?: { employeeCode?: string; fullName?: string };
+  }> {
+    try {
+      const res = await apiClient.post('/auth/reset-password', { identifier, otp, newPassword });
+      return res.data;
+    } catch (err: any) {
+      if (err.response?.data) return err.response.data;
+      throw err;
+    }
+  },
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<{
+    success: boolean;
+    message: string;
+  }> {
+    const token = localStorage.getItem('employee_token') || localStorage.getItem('admin_token');
+    try {
+      const res = await apiClient.post(
+        '/auth/change-password',
+        { currentPassword, newPassword },
+        token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+      );
+      return res.data;
+    } catch (err: any) {
+      if (err.response?.data) return err.response.data;
+      throw err;
+    }
+  },
+
   async checkFaceDuplicate(faceEmbedding?: number[], faceEmbeddings?: number[][], excludeEmployeeId?: string) {
+
     try {
       const res = await apiClient.post('/auth/check-face-duplicate', {
         faceEmbedding,
@@ -632,7 +713,25 @@ export const api = {
   async approveEmployee(idOrCode: string): Promise<Employee> {
     try {
       const res = await apiClient.post(`/employees/${idOrCode}/approve`);
-      return res.data.data;
+      const approvedEmp = res.data.data;
+      if (approvedEmp) {
+        const localEmployees: Employee[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
+        const idx = localEmployees.findIndex(
+          (e) => e.id === idOrCode || e.employeeCode.toUpperCase() === idOrCode.toUpperCase()
+        );
+        if (idx >= 0) {
+          localEmployees[idx] = { ...localEmployees[idx], ...approvedEmp, isApproved: true, approvalStatus: 'APPROVED' };
+          localStorage.setItem('local_employees', JSON.stringify(localEmployees));
+        }
+        const currentUserRaw = localStorage.getItem('employee_user');
+        if (currentUserRaw) {
+          const cu = JSON.parse(currentUserRaw);
+          if (cu.id === idOrCode || cu.employeeCode?.toUpperCase() === idOrCode.toUpperCase()) {
+            localStorage.setItem('employee_user', JSON.stringify({ ...cu, ...approvedEmp, isApproved: true, approvalStatus: 'APPROVED' }));
+          }
+        }
+      }
+      return approvedEmp;
     } catch {
       const localEmployees: Employee[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
       const idx = localEmployees.findIndex(
@@ -666,7 +765,18 @@ export const api = {
   async rejectEmployee(idOrCode: string, reason?: string): Promise<Employee> {
     try {
       const res = await apiClient.post(`/employees/${idOrCode}/reject`, { reason });
-      return res.data.data;
+      const rejectedEmp = res.data.data;
+      if (rejectedEmp) {
+        const localEmployees: Employee[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
+        const idx = localEmployees.findIndex(
+          (e) => e.id === idOrCode || e.employeeCode.toUpperCase() === idOrCode.toUpperCase()
+        );
+        if (idx >= 0) {
+          localEmployees[idx] = { ...localEmployees[idx], ...rejectedEmp, isApproved: false, approvalStatus: 'REJECTED', rejectionReason: reason };
+          localStorage.setItem('local_employees', JSON.stringify(localEmployees));
+        }
+      }
+      return rejectedEmp;
     } catch {
       const localEmployees: Employee[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
       const idx = localEmployees.findIndex(

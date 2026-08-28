@@ -40,6 +40,30 @@ export class SupabaseDbManager {
   // -------------------------------------------------------------
   // ORGANIZATIONS
   // -------------------------------------------------------------
+  async getOrganizations(): Promise<Organization[]> {
+    if (!this.client) return [];
+    try {
+      const { data, error } = await this.client.from('organizations').select('*');
+      if (error || !data) return [];
+      return data.map((d: any) => ({
+        id: d.id,
+        name: d.name,
+        code: d.code,
+        address: d.address,
+        latitude: d.latitude,
+        longitude: d.longitude,
+        geofenceRadiusMeters: d.geofence_radius_meters,
+        masterQrPayload: d.master_qr_payload,
+        masterQrCodeDataUrl: d.master_qr_code_data_url,
+        qrSecretSalt: d.qr_secret_salt,
+        createdAt: d.created_at,
+        updatedAt: d.updated_at,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
   async getPrimaryOrganization(): Promise<Organization | null> {
     if (!this.client) return null;
     try {
@@ -100,6 +124,7 @@ export class SupabaseDbManager {
     }
   }
 
+
   // -------------------------------------------------------------
   // EMPLOYEES
   // -------------------------------------------------------------
@@ -127,8 +152,8 @@ export class SupabaseDbManager {
         faceEmbeddings: e.face_embeddings || [],
         photoUrl: e.photo_url || '',
         isActive: e.is_active !== false,
-        isApproved: e.is_approved !== false && e.approval_status !== 'PENDING' && e.approval_status !== 'REJECTED',
-        approvalStatus: e.approval_status || (e.is_approved === false ? 'PENDING' : 'APPROVED'),
+        isApproved: e.approval_status === 'APPROVED' || (e.is_approved === true && e.approval_status !== 'PENDING' && e.approval_status !== 'REJECTED'),
+        approvalStatus: (e.approval_status as any) || (e.is_approved === true ? 'APPROVED' : 'PENDING'),
         approvedAt: e.approved_at,
         approvedBy: e.approved_by,
         rejectionReason: e.rejection_reason,
@@ -162,8 +187,8 @@ export class SupabaseDbManager {
         faceEmbeddings: data.face_embeddings || [],
         photoUrl: data.photo_url || '',
         isActive: data.is_active !== false,
-        isApproved: data.is_approved !== false && data.approval_status !== 'PENDING' && data.approval_status !== 'REJECTED',
-        approvalStatus: data.approval_status || (data.is_approved === false ? 'PENDING' : 'APPROVED'),
+        isApproved: data.approval_status === 'APPROVED' || (data.is_approved === true && data.approval_status !== 'PENDING' && data.approval_status !== 'REJECTED'),
+        approvalStatus: (data.approval_status as any) || (data.is_approved === true ? 'APPROVED' : 'PENDING'),
         approvedAt: data.approved_at,
         approvedBy: data.approved_by,
         rejectionReason: data.rejection_reason,
@@ -201,8 +226,8 @@ export class SupabaseDbManager {
         faceEmbeddings: data.face_embeddings || [],
         photoUrl: data.photo_url || '',
         isActive: data.is_active !== false,
-        isApproved: data.is_approved !== false && data.approval_status !== 'PENDING' && data.approval_status !== 'REJECTED',
-        approvalStatus: data.approval_status || (data.is_approved === false ? 'PENDING' : 'APPROVED'),
+        isApproved: data.approval_status === 'APPROVED' || (data.is_approved === true && data.approval_status !== 'PENDING' && data.approval_status !== 'REJECTED'),
+        approvalStatus: (data.approval_status as any) || (data.is_approved === true ? 'APPROVED' : 'PENDING'),
         approvedAt: data.approved_at,
         approvedBy: data.approved_by,
         rejectionReason: data.rejection_reason,
@@ -219,6 +244,9 @@ export class SupabaseDbManager {
   async upsertEmployee(emp: Employee): Promise<Employee | null> {
     if (!this.client) return null;
     try {
+      const isApprovedClean = emp.approvalStatus === 'APPROVED' || (emp.isApproved === true && emp.approvalStatus !== 'PENDING' && emp.approvalStatus !== 'REJECTED');
+      const approvalStatusClean = emp.approvalStatus || (isApprovedClean ? 'APPROVED' : 'PENDING');
+
       const payload: any = {
         id: emp.id,
         org_id: emp.orgId,
@@ -233,6 +261,11 @@ export class SupabaseDbManager {
         face_embeddings: emp.faceEmbeddings || (emp.faceEmbedding ? [emp.faceEmbedding] : []),
         photo_url: emp.photoUrl || '',
         is_active: emp.isActive !== false,
+        is_approved: isApprovedClean,
+        approval_status: approvalStatusClean,
+        approved_at: emp.approvedAt || null,
+        approved_by: emp.approvedBy || null,
+        rejection_reason: emp.rejectionReason || null,
         shift_start: emp.shiftStart || '09:00',
         shift_end: emp.shiftEnd || '18:00',
         created_at: emp.createdAt || new Date().toISOString(),
@@ -242,6 +275,19 @@ export class SupabaseDbManager {
       const { error } = await this.client.from('employees').upsert(payload, { onConflict: 'id' });
 
       if (error) {
+        if (
+          error.message.includes('approval_status') ||
+          error.message.includes('approved_') ||
+          error.message.includes('rejection_') ||
+          error.message.includes('is_approved')
+        ) {
+          delete payload.approval_status;
+          delete payload.approved_at;
+          delete payload.approved_by;
+          delete payload.rejection_reason;
+          const retry = await this.client.from('employees').upsert(payload, { onConflict: 'id' });
+          if (!retry.error) return emp;
+        }
         console.warn('Supabase upsert employee error:', error.message);
         return null;
       }
@@ -395,6 +441,25 @@ export class SupabaseDbManager {
     }
   }
 
+  async getAdmins(): Promise<AdminUser[]> {
+    if (!this.client) return [];
+    try {
+      const { data, error } = await this.client.from('admin_users').select('*');
+      if (error || !data) return [];
+      return data.map((d: any) => ({
+        id: d.id,
+        email: d.email,
+        fullName: d.full_name,
+        passwordHash: d.password_hash,
+        role: d.role,
+        orgId: d.org_id,
+        createdAt: d.created_at,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
   async upsertAdmin(admin: AdminUser): Promise<AdminUser | null> {
     if (!this.client) return null;
     try {
@@ -420,6 +485,11 @@ export class SupabaseDbManager {
       return null;
     }
   }
+
+  getClient(): SupabaseClient | null {
+    return this.client;
+  }
 }
 
 export const supabaseDb = new SupabaseDbManager();
+

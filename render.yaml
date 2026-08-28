@@ -21,3 +21,6 @@ services:
         value: https://tbwljslhmcgrxfbzddjg.supabase.co
       - key: SUPABASE_PUBLISHABLE_KEY
         value: sb_publishable_1F37cUkr71KYkpdkWpM2Ig_DRajz0P-
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+
