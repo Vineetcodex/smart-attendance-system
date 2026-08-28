@@ -15,7 +15,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _identifierController = TextEditingController(text: 'EMP-1001');
+  final _identifierController = TextEditingController(text: 'DRP01');
   final _passwordController = TextEditingController(text: 'password123');
   final _serverUrlController = TextEditingController(text: ApiConstants.defaultBaseUrl);
   bool _isLoading = false;
@@ -198,7 +198,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   controller: _identifierController,
                   style: const TextStyle(color: Colors.white, fontSize: 14),
                   decoration: InputDecoration(
-                    hintText: 'e.g. EMP-1001',
+                    hintText: 'e.g. DRP01 or DRP02',
                     hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
                     filled: true,
                     fillColor: AppTheme.surface,

@@ -4,9 +4,9 @@ import { validateAndNormalizeEmployeeCode } from '../utils/codeValidator.js';
 // Known network IPs & Cloud URLs for auto-discovery
 const CANDIDATE_BACKEND_URLS = [
   'https://smart-attendance-system-sdnf.onrender.com/api/v1',
-  'http://192.168.29.93:5000/api/v1',
   'http://localhost:5000/api/v1',
   'http://10.0.2.2:5000/api/v1',
+  'http://192.168.29.93:5000/api/v1',
   '/api/v1',
 ];
 
@@ -49,7 +49,7 @@ export const getApiBase = (): string => {
     }
   }
 
-  return 'http://localhost:5000/api/v1';
+  return 'https://smart-attendance-system-sdnf.onrender.com/api/v1';
 };
 
 export const setApiBase = (url: string) => {
@@ -69,7 +69,7 @@ export const setApiBase = (url: string) => {
 
 export const apiClient = axios.create({
   baseURL: getApiBase(),
-  timeout: 3500,
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -249,7 +249,7 @@ export const api = {
     const testUrl = targetUrl || getApiBase();
     const cleanUrl = testUrl.replace(/\/+$/, '');
     try {
-      const res = await axios.get(`${cleanUrl}/health`, { timeout: 2000 });
+      const res = await axios.get(`${cleanUrl}/health`, { timeout: 10000 });
       if (res.data?.status === 'healthy') {
         return { connected: true, url: testUrl, message: 'Backend connected successfully!' };
       }
@@ -269,7 +269,7 @@ export const api = {
     for (const url of candidates) {
       const clean = url.replace(/\/+$/, '');
       try {
-        const res = await axios.get(`${clean}/health`, { timeout: 1800 });
+        const res = await axios.get(`${clean}/health`, { timeout: 6000 });
         if (res.data?.status === 'healthy') {
           setApiBase(clean);
           return {
@@ -342,8 +342,11 @@ export const api = {
       if (err.response?.data?.isPendingApproval || err.response?.data?.isRejected) {
         return err.response.data;
       }
+      if (err.response?.status === 401 || err.response?.status === 400) {
+        throw err;
+      }
 
-      console.warn('Backend login unreachable or failed, checking local storage database...');
+      console.warn('Backend login unreachable or network timeout, checking local storage database...');
       const localEmployees: Employee[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
       const identifier = rawCode.toUpperCase().replace(/\s+/g, '');
       const rawIdentifier = rawCode.toUpperCase();

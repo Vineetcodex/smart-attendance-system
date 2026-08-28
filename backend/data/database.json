@@ -25,7 +25,7 @@
       "phone": "",
       "department": "Engineering",
       "position": "Software Engineer",
-      "passwordHash": "$2a$10$GixmJjNQbeitwvfak33U.O8../dRZp04ED1IelClGp7AH3O/Pgijq",
+      "passwordHash": "$2a$10$43wDVmXPgQ.PBabyo4.O.uYfbM1C0g7cw6iatCyJdd0pEBKox.6Ti",
       "faceEmbedding": [
         -0.099834,
         0.053748,
@@ -566,7 +566,7 @@
       "phone": "",
       "department": "Engineering",
       "position": "Software Engineer",
-      "passwordHash": "",
+      "passwordHash": "$2a$10$02ChZORSlmSTkimONyyKPOYpqOL6kbce2bCI/BCi8lIBOPBvNWKDi",
       "faceEmbedding": [
         -0.116057,
         0.068173,

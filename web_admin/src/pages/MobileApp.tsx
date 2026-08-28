@@ -2156,7 +2156,35 @@ export const MobileApp: React.FC = () => {
               <form onSubmit={handleLoginSubmit} className="space-y-4">
                 <div className="text-center space-y-1">
                   <h2 className="text-lg font-bold text-white">Employee Sign In</h2>
-                  <p className="text-xs text-slate-400">Enter your Employee ID or email to access your portal</p>
+                  <p className="text-xs text-slate-400">Enter your Employee ID (DRP01 - DRP10) or email</p>
+                </div>
+
+                {/* Quick 1-Tap Fill Demo Accounts */}
+                <div className="p-3 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400 font-medium">⚡ Quick 1-Tap Test Accounts:</span>
+                    <span className="text-[10px] text-emerald-400 font-mono">Pass: password123</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[
+                      { code: 'DRP01', name: 'John Doe' },
+                      { code: 'DRP02', name: 'Ayushman' },
+                      { code: 'DRP05', name: 'Pratyush' },
+                    ].map((acc) => (
+                      <button
+                        key={acc.code}
+                        type="button"
+                        onClick={() => {
+                          setLoginIdentifier(acc.code);
+                          setLoginPassword('password123');
+                          setLoginError(null);
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-emerald-600/30 text-slate-300 hover:text-emerald-300 border border-slate-700 hover:border-emerald-500/40 text-[11px] font-mono transition"
+                      >
+                        {acc.code} <span className="text-[10px] text-slate-400">({acc.name})</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {loginError && (
@@ -2173,10 +2201,10 @@ export const MobileApp: React.FC = () => {
                     <input
                       type="text"
                       required
-                      placeholder="e.g. EMP-1001 or alex@company.com"
+                      placeholder="e.g. DRP01, DRP02, or DRP05"
                       value={loginIdentifier}
                       onChange={(e) => setLoginIdentifier(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500"
+                      className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500 font-mono"
                     />
                   </div>
                 </div>
@@ -2188,7 +2216,7 @@ export const MobileApp: React.FC = () => {
                     <input
                       type="password"
                       required
-                      placeholder="••••••••"
+                      placeholder="•••••••• (Default: password123)"
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
                       className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500"
