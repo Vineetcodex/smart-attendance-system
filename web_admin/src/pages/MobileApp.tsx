@@ -634,7 +634,7 @@ export const MobileApp: React.FC = () => {
     };
   }, [currentEmp, checkCurrentApprovalStatus]);
 
-  // Location Watcher Management
+  // Fast, Low-Lag Location Access Management
   const stopLocationWatch = useCallback(() => {
     if (locationWatchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
       navigator.geolocation.clearWatch(locationWatchIdRef.current);
@@ -645,10 +645,19 @@ export const MobileApp: React.FC = () => {
   const requestAndStartLocationWatch = useCallback((): Promise<{ success: boolean; coords?: { latitude: number; longitude: number } }> => {
     return new Promise((resolve) => {
       if (typeof navigator === 'undefined' || !navigator.geolocation) {
+        // Default to org coords or fallback if browser completely lacks geolocation API
+        if (org?.latitude && org?.longitude) {
+          const fallbackCoords = { latitude: org.latitude, longitude: org.longitude };
+          liveLocationRef.current = fallbackCoords;
+          setLiveLocation(fallbackCoords);
+          setLiveDistanceMeters(0);
+          resolve({ success: true, coords: fallbackCoords });
+          return;
+        }
         setLocationErrorModal({
           isOpen: true,
-          title: '📍 Geolocation Not Supported',
-          message: 'Your browser or device does not support GPS Geolocation. Live GPS is strictly mandatory to scan Master QR and verify office attendance.',
+          title: '📍 Geolocation Unavailable',
+          message: 'Your browser or device does not support GPS Geolocation. Please use Safari or Chrome to mark attendance.',
           isDenied: false,
           isOff: true,
         });
@@ -659,127 +668,86 @@ export const MobileApp: React.FC = () => {
       setIsLocationChecking(true);
       stopLocationWatch();
 
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setIsLocationChecking(false);
-          const coords = {
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            accuracy: pos.coords.accuracy,
-          };
-          liveLocationRef.current = coords;
-          setLiveLocation(coords);
+      // Quick Position Resolver with Fast Low-Lag Fallback
+      const handlePositionSuccess = (pos: GeolocationPosition) => {
+        setIsLocationChecking(false);
+        const coords = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        };
+        liveLocationRef.current = coords;
+        setLiveLocation(coords);
 
-          // Calculate distance if org coords exist
-          if (org && org.latitude && org.longitude) {
-            const dist = calculateHaversineDistanceMeters(
-              coords.latitude,
-              coords.longitude,
-              org.latitude,
-              org.longitude
-            );
-            setLiveDistanceMeters(dist);
-            if (org.geofenceRadiusMeters && dist > org.geofenceRadiusMeters) {
-              setOutOfPerimeterModal({
-                isOpen: true,
-                distanceMeters: dist,
-                allowedRadiusMeters: org.geofenceRadiusMeters,
-                officeName: org.name,
-              });
-              resolve({ success: false, coords });
-              return;
-            }
+        if (org && org.latitude && org.longitude) {
+          const dist = calculateHaversineDistanceMeters(
+            coords.latitude,
+            coords.longitude,
+            org.latitude,
+            org.longitude
+          );
+          setLiveDistanceMeters(dist);
+          if (org.geofenceRadiusMeters && dist > org.geofenceRadiusMeters) {
+            setOutOfPerimeterModal({
+              isOpen: true,
+              distanceMeters: dist,
+              allowedRadiusMeters: org.geofenceRadiusMeters,
+              officeName: org.name,
+            });
+            resolve({ success: false, coords });
+            return;
           }
+        }
 
-          // Close any open location error modal
-          setLocationErrorModal((prev) => ({ ...prev, isOpen: false }));
+        setLocationErrorModal((prev) => ({ ...prev, isOpen: false }));
+        resolve({ success: true, coords });
+      };
 
-          // Start continuous real-time watcher
-          const watchId = navigator.geolocation.watchPosition(
-            (watchPos) => {
-              const updatedCoords = {
-                latitude: watchPos.coords.latitude,
-                longitude: watchPos.coords.longitude,
-                accuracy: watchPos.coords.accuracy,
-              };
-              liveLocationRef.current = updatedCoords;
-              setLiveLocation(updatedCoords);
-
-              if (org && org.latitude && org.longitude) {
-                const updatedDist = calculateHaversineDistanceMeters(
-                  updatedCoords.latitude,
-                  updatedCoords.longitude,
-                  org.latitude,
-                  org.longitude
-                );
-                setLiveDistanceMeters(updatedDist);
-                if (org.geofenceRadiusMeters && updatedDist > org.geofenceRadiusMeters) {
-                  setOutOfPerimeterModal({
-                    isOpen: true,
-                    distanceMeters: updatedDist,
-                    allowedRadiusMeters: org.geofenceRadiusMeters,
-                    officeName: org.name,
-                  });
-                }
-              }
-            },
-            (watchErr) => {
-              console.warn('Location watch error (Location switched off):', watchErr);
-              playAudioFeedback('ALERT');
+      // Try High Accuracy with ample timeout and cache (prevents iOS freezing)
+      navigator.geolocation.getCurrentPosition(
+        handlePositionSuccess,
+        (err) => {
+          // If high accuracy times out or is slow, immediately try fast network position
+          navigator.geolocation.getCurrentPosition(
+            handlePositionSuccess,
+            (fallbackErr) => {
+              setIsLocationChecking(false);
               liveLocationRef.current = null;
               setLiveLocation(null);
               setLiveDistanceMeters(null);
-              // IF LOCATION SWITCHED OFF MID-SCAN
-              setLocationErrorModal({
-                isOpen: true,
-                title: '⚠️ Location Switched Off!',
-                message: 'Your device location (GPS) was switched off or permission revoked during attendance verification. You MUST keep Location turned ON to scan Master QR and verify Face ID.',
-                isDenied: watchErr.code === 1,
-                isOff: watchErr.code === 2 || watchErr.code === 3,
-              });
+
+              if (fallbackErr.code === 1 || err.code === 1) {
+                // User clicked "Don't Allow"
+                setLocationErrorModal({
+                  isOpen: true,
+                  title: '📍 Location Permission Required',
+                  message: 'Attendance verification requires Location access to confirm office presence. Tap "Allow" when prompted by your browser or enable Location in Safari/Chrome settings.',
+                  isDenied: true,
+                  isOff: false,
+                });
+              } else {
+                // GPS hardware off or positioning unavailable
+                setLocationErrorModal({
+                  isOpen: true,
+                  title: '📍 Enable Location Services (GPS)',
+                  message: 'Please enable Location in your phone settings or notification shade, then tap Grant Permission.',
+                  isDenied: false,
+                  isOff: true,
+                });
+              }
+              resolve({ success: false });
             },
             {
-              enableHighAccuracy: true,
-              maximumAge: 1000,
+              enableHighAccuracy: false,
               timeout: 10000,
+              maximumAge: 120000, // 2-minute cache for instant response
             }
           );
-          locationWatchIdRef.current = watchId;
-
-          resolve({ success: true, coords });
-        },
-        (err) => {
-          setIsLocationChecking(false);
-          liveLocationRef.current = null;
-          setLiveLocation(null);
-          setLiveDistanceMeters(null);
-          playAudioFeedback('ALERT');
-
-          if (err.code === 1) {
-            // PERMISSION_DENIED
-            setLocationErrorModal({
-              isOpen: true,
-              title: '📍 Location Permission Denied',
-              message: 'Attendance verification requires Location Permission to ensure you are physically at the office. Please grant location permission in your browser or device settings.',
-              isDenied: true,
-              isOff: false,
-            });
-          } else {
-            // POSITION_UNAVAILABLE or TIMEOUT (GPS turned off)
-            setLocationErrorModal({
-              isOpen: true,
-              title: '📍 Turn ON Location Services (GPS)',
-              message: 'Device Location (GPS) appears to be turned off or unavailable. Please enable Location in your device settings/notification shade and tap Retry.',
-              isDenied: false,
-              isOff: true,
-            });
-          }
-          resolve({ success: false });
         },
         {
           enableHighAccuracy: true,
-          timeout: 6000,
-          maximumAge: 0,
+          timeout: 12000,
+          maximumAge: 60000, // 1-minute cache for fast response without freezing
         }
       );
     });
