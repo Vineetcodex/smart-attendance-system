@@ -139,15 +139,17 @@ export class SupabaseDbManager {
       if (error || !data) return [];
 
       return data.map((e: any) => {
-        let mappedStatus: 'PENDING' | 'APPROVED' | 'REJECTED' = 'PENDING';
+        let mappedStatus: 'PENDING' | 'APPROVED' | 'REJECTED' = 'APPROVED';
         if (e.approval_status === 'APPROVED' || e.approval_status === 'REJECTED' || e.approval_status === 'PENDING') {
           mappedStatus = e.approval_status;
         } else if (e.is_approved === true) {
           mappedStatus = 'APPROVED';
-        } else if (e.rejection_reason || e.is_active === false) {
+        } else if (e.rejection_reason) {
           mappedStatus = 'REJECTED';
-        } else {
+        } else if (e.is_active === false) {
           mappedStatus = 'PENDING';
+        } else {
+          mappedStatus = 'APPROVED';
         }
 
         return {
@@ -186,15 +188,17 @@ export class SupabaseDbManager {
       const { data, error } = await this.client.from('employees').select('*').eq('id', id).single();
       if (error || !data) return null;
 
-      let mappedStatus: 'PENDING' | 'APPROVED' | 'REJECTED' = 'PENDING';
+      let mappedStatus: 'PENDING' | 'APPROVED' | 'REJECTED' = 'APPROVED';
       if (data.approval_status === 'APPROVED' || data.approval_status === 'REJECTED' || data.approval_status === 'PENDING') {
         mappedStatus = data.approval_status;
       } else if (data.is_approved === true) {
         mappedStatus = 'APPROVED';
-      } else if (data.rejection_reason || data.is_active === false) {
+      } else if (data.rejection_reason) {
         mappedStatus = 'REJECTED';
-      } else {
+      } else if (data.is_active === false) {
         mappedStatus = 'PENDING';
+      } else {
+        mappedStatus = 'APPROVED';
       }
 
       return {
@@ -236,15 +240,17 @@ export class SupabaseDbManager {
         .single();
       if (error || !data) return null;
 
-      let mappedStatus: 'PENDING' | 'APPROVED' | 'REJECTED' = 'PENDING';
+      let mappedStatus: 'PENDING' | 'APPROVED' | 'REJECTED' = 'APPROVED';
       if (data.approval_status === 'APPROVED' || data.approval_status === 'REJECTED' || data.approval_status === 'PENDING') {
         mappedStatus = data.approval_status;
       } else if (data.is_approved === true) {
         mappedStatus = 'APPROVED';
-      } else if (data.rejection_reason || data.is_active === false) {
+      } else if (data.rejection_reason) {
         mappedStatus = 'REJECTED';
-      } else {
+      } else if (data.is_active === false) {
         mappedStatus = 'PENDING';
+      } else {
+        mappedStatus = 'APPROVED';
       }
 
       return {
@@ -280,7 +286,6 @@ export class SupabaseDbManager {
     if (!this.client) return null;
     try {
       const isApprovedClean = emp.approvalStatus === 'APPROVED' || (emp.isApproved === true && emp.approvalStatus !== 'PENDING' && emp.approvalStatus !== 'REJECTED');
-      const approvalStatusClean = emp.approvalStatus || (isApprovedClean ? 'APPROVED' : 'PENDING');
 
       const payload: any = {
         id: emp.id,
@@ -295,12 +300,7 @@ export class SupabaseDbManager {
         face_embedding: emp.faceEmbedding || [],
         face_embeddings: emp.faceEmbeddings || (emp.faceEmbedding ? [emp.faceEmbedding] : []),
         photo_url: emp.photoUrl || '',
-        is_active: emp.isActive !== false,
-        is_approved: isApprovedClean,
-        approval_status: approvalStatusClean,
-        approved_at: emp.approvedAt || null,
-        approved_by: emp.approvedBy || null,
-        rejection_reason: emp.rejectionReason || null,
+        is_active: isApprovedClean && emp.isActive !== false,
         shift_start: emp.shiftStart || '09:00',
         shift_end: emp.shiftEnd || '18:00',
         created_at: emp.createdAt || new Date().toISOString(),
@@ -310,19 +310,6 @@ export class SupabaseDbManager {
       const { error } = await this.client.from('employees').upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        if (
-          error.message.includes('approval_status') ||
-          error.message.includes('approved_') ||
-          error.message.includes('rejection_') ||
-          error.message.includes('is_approved')
-        ) {
-          delete payload.approval_status;
-          delete payload.approved_at;
-          delete payload.approved_by;
-          delete payload.rejection_reason;
-          const retry = await this.client.from('employees').upsert(payload, { onConflict: 'id' });
-          if (!retry.error) return emp;
-        }
         console.warn('Supabase upsert employee error:', error.message);
         return null;
       }

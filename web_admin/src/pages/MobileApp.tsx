@@ -1368,47 +1368,18 @@ export const MobileApp: React.FC = () => {
         showToast('✅ Registration Submitted! Waiting for Admin Approval.');
       }
     } catch (err: any) {
+      playAudioFeedback('ALERT');
       if (err.response?.status === 409 || err.response?.data?.isMalpractice) {
         const msg = err.response?.data?.message || '🚨 Face already enrolled under another ID!';
         setSignupError(msg);
-        playAudioFeedback('ALERT');
         setCapturedPoses({});
         showToast('🚨 Malpractice Blocked: Face already enrolled!');
         return;
       }
 
-      console.warn('Network or server error during signup, activating graceful local onboarding:', err);
-      const fallbackEmp: Employee = {
-        id: 'emp_local_' + Date.now(),
-        orgId: 'org_drp_tech_hq',
-        employeeCode: signupCode.trim().toUpperCase(),
-        fullName: signupFullName.trim(),
-        email: signupEmail.trim().toLowerCase(),
-        department: signupDept,
-        position: signupPosition.trim(),
-        faceEmbedding: capturedPoses.straight?.embedding || [],
-        faceEmbeddings: [capturedPoses.straight?.embedding || []],
-        photoUrl:
-          capturedPoses.straight?.photoUrl ||
-          `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(signupFullName.trim())}`,
-        isActive: true,
-        isApproved: false,
-        approvalStatus: 'PENDING',
-        shiftStart: signupShiftStart,
-        shiftEnd: signupShiftEnd,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      const localEmployees: any[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
-      localEmployees.push(fallbackEmp);
-      localStorage.setItem('local_employees', JSON.stringify(localEmployees));
-      localStorage.setItem('employee_user', JSON.stringify(fallbackEmp));
-      localStorage.removeItem('employee_token');
-
-      playAudioFeedback('STEP');
-      setCurrentEmp(fallbackEmp);
-      showToast(`✅ Registration Submitted! Waiting for Admin Approval.`);
+      const msg = err.response?.data?.message || err.message || 'Registration failed. Please check connection and try again.';
+      setSignupError(msg);
+      showToast(`❌ ${msg}`);
     } finally {
       setIsSigningUp(false);
     }

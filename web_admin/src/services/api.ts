@@ -1,16 +1,13 @@
 import axios from 'axios';
-import { validateAndNormalizeEmployeeCode } from '../utils/codeValidator.js';
 
-// Known network IPs & Cloud URLs for auto-discovery
-const CANDIDATE_BACKEND_URLS = [
-  'https://smart-attendance-system-sdnf.onrender.com/api/v1',
-  'http://localhost:5000/api/v1',
-  'http://10.0.2.2:5000/api/v1',
-  'http://192.168.29.93:5000/api/v1',
-  '/api/v1',
+// Global 24/7 Cloud Backend on Render (Single Authoritative Database for All Clients)
+export const CLOUD_BACKEND_URL = 'https://smart-attendance-system-sdnf.onrender.com/api/v1';
+
+export const CANDIDATE_BACKEND_URLS = [
+  CLOUD_BACKEND_URL,
 ];
 
-// Dynamic API Base URL resolver
+// Dynamic API Base URL resolver (Always unified with Render Cloud)
 export const getApiBase = (): string => {
   const custom = localStorage.getItem('custom_backend_url');
   if (custom && custom.trim() !== '') return custom.trim();
@@ -19,46 +16,16 @@ export const getApiBase = (): string => {
     return import.meta.env.VITE_API_URL;
   }
 
-  // Detect environment
-  if (typeof window !== 'undefined' && window.location) {
-    const host = window.location.hostname;
-    const protocol = window.location.protocol;
-    const port = window.location.port;
-
-    // Check if running inside Capacitor Android APK
-    const isCapacitor =
-      (window as any).Capacitor !== undefined ||
-      protocol === 'capacitor:';
-
-    if (isCapacitor) {
-      // Default to 24/7 Global Cloud Backend on Render (works on 5G/4G mobile data & any Wi-Fi)
-      return 'https://smart-attendance-system-sdnf.onrender.com/api/v1';
-    }
-
-    // If served from production backend (same origin, e.g. on Render or unified server)
-    if (protocol === 'https:' || (port !== '5173' && port !== '3000' && host !== 'localhost' && host !== '127.0.0.1')) {
-      return `${window.location.origin}/api/v1`;
-    }
-
-    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') {
-      return 'http://localhost:5000/api/v1';
-    }
-
-    if (host && host.trim() !== '') {
-      return `http://${host}:5000/api/v1`;
-    }
-  }
-
-  return 'https://smart-attendance-system-sdnf.onrender.com/api/v1';
+  return CLOUD_BACKEND_URL;
 };
 
 export const setApiBase = (url: string) => {
-  if (!url || url.trim() === '' || url.trim() === '/api/v1') {
+  if (!url || url.trim() === '' || url.trim() === '/api/v1' || url.trim() === CLOUD_BACKEND_URL) {
     localStorage.removeItem('custom_backend_url');
   } else {
     let clean = url.trim();
     if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
-      clean = 'http://' + clean;
+      clean = 'https://' + clean;
     }
     if (!clean.endsWith('/api/v1')) {
       clean = clean.replace(/\/+$/, '') + '/api/v1';
@@ -69,7 +36,7 @@ export const setApiBase = (url: string) => {
 
 export const apiClient = axios.create({
   baseURL: getApiBase(),
-  timeout: 15000,
+  timeout: 60000, // 60s timeout to allow Render free tier spin-up seamlessly
   headers: {
     'Content-Type': 'application/json',
   },
@@ -603,63 +570,13 @@ export const api = {
       if (err.response?.status === 409 || err.response?.data?.isMalpractice) {
         throw err;
       }
-
-      console.warn('Backend server unavailable or network error. Saving employee directly to local mobile database...', err);
-      const localEmployees: any[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
-
-      const codeValidation = validateAndNormalizeEmployeeCode(data.employeeCode || '');
-      const code = codeValidation.isValid ? codeValidation.normalizedCode : (data.employeeCode || 'DRP01').toUpperCase().trim();
-
-      const newEmp: Employee = {
-        id: 'emp_local_' + Date.now(),
-        orgId: 'org_drp_tech_hq',
-        employeeCode: code,
-        fullName: data.fullName.trim(),
-        email: data.email.toLowerCase().trim(),
-        phone: data.phone || '',
-        department: data.department || 'Engineering',
-        position: data.position || 'Software Engineer',
-        faceEmbedding: data.faceEmbedding || [],
-        faceEmbeddings: data.faceEmbeddings || (data.faceEmbedding ? [data.faceEmbedding] : []),
-        photoUrl:
-          data.photoUrl ||
-          `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.fullName.trim())}`,
-        isActive: true,
-        isApproved: false,
-        approvalStatus: 'PENDING',
-        shiftStart: data.shiftStart || '09:00',
-        shiftEnd: data.shiftEnd || '18:00',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      const existingIdx = localEmployees.findIndex(
-        (e) => e.employeeCode === code || e.email === newEmp.email
-      );
-      if (existingIdx >= 0) {
-        localEmployees[existingIdx] = { ...newEmp, password: data.password };
-      } else {
-        localEmployees.push({ ...newEmp, password: data.password });
+      if (err.response?.data?.message) {
+        throw new Error(err.response.data.message);
       }
-      localStorage.setItem('local_employees', JSON.stringify(localEmployees));
-
-      return {
-        success: true,
-        isPendingApproval: true,
-        approvalStatus: 'PENDING',
-        message: 'Face ID registered and account created successfully! Waiting for admin approval.',
-        data: {
-          employee: newEmp,
-          isPendingApproval: true,
-          approvalStatus: 'PENDING',
-          organization: {
-            id: 'org_drp_tech_hq',
-            name: 'DRP Technology HQ',
-            code: 'DRP-HQ-01',
-            geofenceRadiusMeters: 50,
-          },
-        },
-      };
+      console.error('Render Cloud signup error:', err);
+      throw new Error(
+        'Connecting to Render cloud database... If the server was sleeping, please wait a few seconds and tap Complete Registration again.'
+      );
     }
   },
 
@@ -674,26 +591,12 @@ export const api = {
     try {
       const res = await apiClient.get(`/auth/employee-status/${idOrCode}`);
       return res.data;
-    } catch {
-      const localEmployees: Employee[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
-      const found = localEmployees.find(
-        (e) => e.id === idOrCode || e.employeeCode.toUpperCase() === idOrCode.toUpperCase() || e.email.toUpperCase() === idOrCode.toUpperCase()
-      );
-      if (found) {
-        const isApproved = found.isApproved !== false && found.approvalStatus !== 'PENDING' && found.approvalStatus !== 'REJECTED';
-        return {
-          success: true,
-          isApproved,
-          approvalStatus: found.approvalStatus || (isApproved ? 'APPROVED' : 'PENDING'),
-          employee: found,
-          message: isApproved ? 'Account approved.' : 'Waiting for admin approval.',
-        };
-      }
+    } catch (err: any) {
       return {
         success: false,
         isApproved: false,
         approvalStatus: 'PENDING',
-        message: 'Status check offline.',
+        message: err.response?.data?.message || 'Checking status with cloud database...',
       };
     }
   },
@@ -835,28 +738,9 @@ export const api = {
 
   // Employees
   async getEmployees(params?: { department?: string; status?: string } | string): Promise<Employee[]> {
-    try {
-      const query = typeof params === 'string' ? { department: params } : params;
-      const res = await apiClient.get('/employees', { params: query });
-      return res.data.data;
-    } catch {
-      const all: Employee[] = getLocalOrSeedEmployees();
-      const query = typeof params === 'string' ? { department: params } : params;
-      let filtered = all;
-      if (query?.department && query.department !== 'ALL') {
-        filtered = filtered.filter((e) => e.department.toLowerCase() === query.department?.toLowerCase());
-      }
-      if (query?.status && query.status !== 'ALL') {
-        if (query.status === 'PENDING') {
-          filtered = filtered.filter((e) => e.approvalStatus === 'PENDING');
-        } else if (query.status === 'APPROVED') {
-          filtered = filtered.filter((e) => e.approvalStatus === 'APPROVED' || (e.isApproved === true && e.approvalStatus !== 'PENDING' && e.approvalStatus !== 'REJECTED'));
-        } else if (query.status === 'REJECTED') {
-          filtered = filtered.filter((e) => e.approvalStatus === 'REJECTED');
-        }
-      }
-      return filtered;
-    }
+    const query = typeof params === 'string' ? { department: params } : params;
+    const res = await apiClient.get('/employees', { params: query });
+    return res.data.data || [];
   },
 
   async createEmployee(data: Partial<Employee>): Promise<Employee> {
@@ -869,111 +753,26 @@ export const api = {
   },
 
   async getPendingEmployees(): Promise<Employee[]> {
-    try {
-      const res = await apiClient.get('/employees', { params: { status: 'PENDING' } });
-      return res.data.data;
-    } catch {
-      const all: Employee[] = getLocalOrSeedEmployees();
-      return all.filter((e) => e.approvalStatus === 'PENDING');
-    }
+    const res = await apiClient.get('/employees', { params: { status: 'PENDING' } });
+    return res.data.data || [];
   },
 
   async approveEmployee(idOrCode: string): Promise<Employee> {
-    try {
-      const res = await apiClient.post(`/employees/${idOrCode}/approve`);
-      const approvedEmp = res.data.data;
-      if (approvedEmp) {
-        const localEmployees: Employee[] = getLocalOrSeedEmployees();
-        const idx = localEmployees.findIndex(
-          (e) => e.id === idOrCode || e.employeeCode.toUpperCase() === idOrCode.toUpperCase()
-        );
-        if (idx >= 0) {
-          localEmployees[idx] = { ...localEmployees[idx], ...approvedEmp, isApproved: true, approvalStatus: 'APPROVED' };
-          localStorage.setItem('local_employees', JSON.stringify(localEmployees));
-        }
-        const currentUserRaw = localStorage.getItem('employee_user');
-        if (currentUserRaw) {
-          const cu = JSON.parse(currentUserRaw);
-          if (cu.id === idOrCode || cu.employeeCode?.toUpperCase() === idOrCode.toUpperCase()) {
-            localStorage.setItem('employee_user', JSON.stringify({ ...cu, ...approvedEmp, isApproved: true, approvalStatus: 'APPROVED' }));
-          }
-        }
+    const res = await apiClient.post(`/employees/${idOrCode}/approve`);
+    const approvedEmp = res.data.data;
+    const currentUserRaw = localStorage.getItem('employee_user');
+    if (currentUserRaw) {
+      const cu = JSON.parse(currentUserRaw);
+      if (cu.id === idOrCode || cu.employeeCode?.toUpperCase() === idOrCode.toUpperCase()) {
+        localStorage.setItem('employee_user', JSON.stringify({ ...cu, ...approvedEmp, isApproved: true, approvalStatus: 'APPROVED' }));
       }
-      return approvedEmp;
-    } catch {
-      const localEmployees: Employee[] = getLocalOrSeedEmployees();
-      const idx = localEmployees.findIndex(
-        (e) => e.id === idOrCode || e.employeeCode.toUpperCase() === idOrCode.toUpperCase()
-      );
-      if (idx >= 0) {
-        localEmployees[idx].isApproved = true;
-        localEmployees[idx].approvalStatus = 'APPROVED';
-        localEmployees[idx].approvedAt = new Date().toISOString();
-        localStorage.setItem('local_employees', JSON.stringify(localEmployees));
-        return localEmployees[idx];
-      }
-      return {
-        id: idOrCode,
-        orgId: 'org_drp_tech_hq',
-        employeeCode: idOrCode,
-        fullName: 'Employee',
-        email: '',
-        department: 'General',
-        position: 'Staff',
-        faceEmbedding: [],
-        isActive: true,
-        isApproved: true,
-        approvalStatus: 'APPROVED',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
     }
+    return approvedEmp;
   },
 
   async rejectEmployee(idOrCode: string, reason?: string): Promise<Employee> {
-    try {
-      const res = await apiClient.post(`/employees/${idOrCode}/reject`, { reason });
-      const rejectedEmp = res.data.data;
-      if (rejectedEmp) {
-        const localEmployees: Employee[] = getLocalOrSeedEmployees();
-        const idx = localEmployees.findIndex(
-          (e) => e.id === idOrCode || e.employeeCode.toUpperCase() === idOrCode.toUpperCase()
-        );
-        if (idx >= 0) {
-          localEmployees[idx] = { ...localEmployees[idx], ...rejectedEmp, isApproved: false, approvalStatus: 'REJECTED', rejectionReason: reason };
-          localStorage.setItem('local_employees', JSON.stringify(localEmployees));
-        }
-      }
-      return rejectedEmp;
-    } catch {
-      const localEmployees: Employee[] = getLocalOrSeedEmployees();
-      const idx = localEmployees.findIndex(
-        (e) => e.id === idOrCode || e.employeeCode.toUpperCase() === idOrCode.toUpperCase()
-      );
-      if (idx >= 0) {
-        localEmployees[idx].isApproved = false;
-        localEmployees[idx].approvalStatus = 'REJECTED';
-        localEmployees[idx].rejectionReason = reason;
-        localStorage.setItem('local_employees', JSON.stringify(localEmployees));
-        return localEmployees[idx];
-      }
-      return {
-        id: idOrCode,
-        orgId: 'org_drp_tech_hq',
-        employeeCode: idOrCode,
-        fullName: 'Employee',
-        email: '',
-        department: 'General',
-        position: 'Staff',
-        faceEmbedding: [],
-        isActive: false,
-        isApproved: false,
-        approvalStatus: 'REJECTED',
-        rejectionReason: reason || 'Rejected by administrator',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-    }
+    const res = await apiClient.post(`/employees/${idOrCode}/reject`, { reason });
+    return res.data.data;
   },
 
   async updateEmployee(id: string, data: Partial<Employee>): Promise<Employee> {
