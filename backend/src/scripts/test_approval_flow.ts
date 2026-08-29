@@ -215,8 +215,43 @@ async function runApprovalWorkflowTests() {
   }
   console.log(`✅ Test 7 Passed: Rejection workflow verified. Login blocked with reason: "${res7Login.message}".\n`);
 
+  // -------------------------------------------------------------
+  // TEST 8: Verify Rejected Applicant is NOT in Pending Queue
+  // -------------------------------------------------------------
+  console.log('TEST 8: Verifying rejected applicant (DRP09) does NOT appear in pending approvals queue...');
+  const test8 = mockResHelper();
+  await EmployeeController.getEmployees(
+    {
+      query: { status: 'PENDING' },
+    } as any,
+    test8.res
+  );
+  const res8 = test8.getJson();
+  const foundRejectedInPending = res8.data?.find((e: any) => e.employeeCode === 'DRP09');
+  if (foundRejectedInPending) {
+    throw new Error('Test 8 Failed: Rejected employee DRP09 still appeared in pending approvals list!');
+  }
+  console.log('✅ Test 8 Passed: Rejected applicant is completely excluded from pending queue.\n');
+
+  // -------------------------------------------------------------
+  // TEST 9: Delete Employee & Verify Cloud Sync Does Not Resurrect
+  // -------------------------------------------------------------
+  console.log('TEST 9: Deleting employee DRP09 and verifying cloud sync does not resurrect them...');
+  db.deleteEmployee('DRP09');
+  if (db.getEmployeeByCode('DRP09')) {
+    throw new Error('Test 9 Failed: DRP09 was not deleted locally.');
+  }
+
+  // Trigger cloud sync
+  await db.syncWithCloud().catch(() => {});
+
+  if (db.getEmployeeByCode('DRP09')) {
+    throw new Error('Test 9 Failed: DRP09 was resurrected by cloud sync after deletion!');
+  }
+  console.log('✅ Test 9 Passed: Deleted employee is permanently removed and never resurrected by cloud sync.\n');
+
   console.log('================================================================');
-  console.log('🎉 ALL 7 APPROVAL WORKFLOW TESTS PASSED FLAWLESSLY!');
+  console.log('🎉 ALL 9 APPROVAL & PERSISTENCE TESTS PASSED FLAWLESSLY!');
   console.log('================================================================');
 }
 

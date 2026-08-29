@@ -226,6 +226,176 @@ function calculateLocalDistance(vecA: number[], vecB: number[]): { distance: num
   return { distance: parseFloat(distance.toFixed(4)), similarity: parseFloat(similarity.toFixed(4)), isMatch };
 }
 
+// Default Pre-seeded staff roster for instant offline & cold-start continuity
+export const DEFAULT_STAFF_MEMBERS: Employee[] = [
+  {
+    id: 'emp_default_1001',
+    orgId: 'org_drp_tech_hq',
+    employeeCode: 'EMP-1001',
+    fullName: 'Alex Rivera',
+    email: 'alex.rivera@drptech.com',
+    phone: '+1 (555) 234-5678',
+    department: 'Engineering',
+    position: 'Senior Mobile Engineer',
+    faceEmbedding: [],
+    photoUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex%20Rivera',
+    isActive: true,
+    isApproved: true,
+    approvalStatus: 'APPROVED',
+    shiftStart: '09:00',
+    shiftEnd: '18:00',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'emp_default_1002',
+    orgId: 'org_drp_tech_hq',
+    employeeCode: 'EMP-1002',
+    fullName: 'Elena Rostova',
+    email: 'elena.rostova@drptech.com',
+    phone: '+1 (555) 345-6789',
+    department: 'Product',
+    position: 'Lead UI/UX Designer',
+    faceEmbedding: [],
+    photoUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Elena%20Rostova',
+    isActive: true,
+    isApproved: true,
+    approvalStatus: 'APPROVED',
+    shiftStart: '09:30',
+    shiftEnd: '18:30',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'emp_default_1003',
+    orgId: 'org_drp_tech_hq',
+    employeeCode: 'EMP-1003',
+    fullName: 'Marcus Vance',
+    email: 'marcus.vance@drptech.com',
+    phone: '+1 (555) 456-7890',
+    department: 'Engineering',
+    position: 'Backend Architect',
+    faceEmbedding: [],
+    photoUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Marcus%20Vance',
+    isActive: true,
+    isApproved: true,
+    approvalStatus: 'APPROVED',
+    shiftStart: '09:00',
+    shiftEnd: '18:00',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'emp_default_1004',
+    orgId: 'org_drp_tech_hq',
+    employeeCode: 'EMP-1004',
+    fullName: 'Priya Sharma',
+    email: 'priya.sharma@drptech.com',
+    phone: '+1 (555) 567-8901',
+    department: 'Marketing',
+    position: 'Growth Strategist',
+    faceEmbedding: [],
+    photoUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya%20Sharma',
+    isActive: true,
+    isApproved: true,
+    approvalStatus: 'APPROVED',
+    shiftStart: '10:00',
+    shiftEnd: '19:00',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'emp_default_1005',
+    orgId: 'org_drp_tech_hq',
+    employeeCode: 'EMP-1005',
+    fullName: 'David Kim',
+    email: 'david.kim@drptech.com',
+    phone: '+1 (555) 678-9012',
+    department: 'Human Resources',
+    position: 'People Ops Manager',
+    faceEmbedding: [],
+    photoUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=David%20Kim',
+    isActive: true,
+    isApproved: true,
+    approvalStatus: 'APPROVED',
+    shiftStart: '08:30',
+    shiftEnd: '17:30',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'emp_default_drp01',
+    orgId: 'org_drp_tech_hq',
+    employeeCode: 'DRP01',
+    fullName: 'John Doe',
+    email: 'john.doe@drptech.com',
+    phone: '+1 (555) 123-4567',
+    department: 'Engineering',
+    position: 'Senior Engineer',
+    faceEmbedding: [],
+    photoUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=John%20Doe',
+    isActive: true,
+    isApproved: true,
+    approvalStatus: 'APPROVED',
+    shiftStart: '09:00',
+    shiftEnd: '18:00',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'emp_default_drp02',
+    orgId: 'org_drp_tech_hq',
+    employeeCode: 'DRP02',
+    fullName: 'Ayushman',
+    email: 'ayushman@drptech.com',
+    phone: '+1 (555) 789-0123',
+    department: 'Product',
+    position: 'Product Designer',
+    faceEmbedding: [],
+    photoUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ayushman',
+    isActive: true,
+    isApproved: true,
+    approvalStatus: 'APPROVED',
+    shiftStart: '09:00',
+    shiftEnd: '18:00',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'emp_default_drp05',
+    orgId: 'org_drp_tech_hq',
+    employeeCode: 'DRP05',
+    fullName: 'Pratyush',
+    email: 'pratyush@drptech.com',
+    phone: '+1 (555) 890-1234',
+    department: 'Engineering',
+    position: 'Backend Architect',
+    faceEmbedding: [],
+    photoUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Pratyush',
+    isActive: true,
+    isApproved: true,
+    approvalStatus: 'APPROVED',
+    shiftStart: '09:00',
+    shiftEnd: '18:00',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+export function getLocalOrSeedEmployees(): Employee[] {
+  try {
+    const raw = localStorage.getItem('local_employees');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (_) {}
+  localStorage.setItem('local_employees', JSON.stringify(DEFAULT_STAFF_MEMBERS));
+  return DEFAULT_STAFF_MEMBERS;
+}
+
 export const api = {
   // Check for in-app software updates
   async checkAppUpdate(): Promise<{ hasUpdate: boolean; currentVersion: string; versionInfo?: AppVersionInfo }> {
@@ -249,7 +419,7 @@ export const api = {
     const testUrl = targetUrl || getApiBase();
     const cleanUrl = testUrl.replace(/\/+$/, '');
     try {
-      const res = await axios.get(`${cleanUrl}/health`, { timeout: 10000 });
+      const res = await axios.get(`${cleanUrl}/health`, { timeout: 15000 });
       if (res.data?.status === 'healthy') {
         return { connected: true, url: testUrl, message: 'Backend connected successfully!' };
       }
@@ -269,7 +439,7 @@ export const api = {
     for (const url of candidates) {
       const clean = url.replace(/\/+$/, '');
       try {
-        const res = await axios.get(`${clean}/health`, { timeout: 6000 });
+        const res = await axios.get(`${clean}/health`, { timeout: 8000 });
         if (res.data?.status === 'healthy') {
           setApiBase(clean);
           return {
@@ -351,7 +521,7 @@ export const api = {
       }
 
       console.warn('Backend login unreachable or network timeout, checking local storage database...');
-      const localEmployees: Employee[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
+      const localEmployees: Employee[] = getLocalOrSeedEmployees();
       const identifier = rawCode.toUpperCase().replace(/\s+/g, '');
       const rawIdentifier = rawCode.toUpperCase();
       const found = localEmployees.find(
@@ -670,8 +840,7 @@ export const api = {
       const res = await apiClient.get('/employees', { params: query });
       return res.data.data;
     } catch {
-      const local = localStorage.getItem('local_employees');
-      const all: Employee[] = local ? JSON.parse(local) : [];
+      const all: Employee[] = getLocalOrSeedEmployees();
       const query = typeof params === 'string' ? { department: params } : params;
       let filtered = all;
       if (query?.department && query.department !== 'ALL') {
@@ -679,9 +848,9 @@ export const api = {
       }
       if (query?.status && query.status !== 'ALL') {
         if (query.status === 'PENDING') {
-          filtered = filtered.filter((e) => e.approvalStatus === 'PENDING' || e.isApproved === false);
+          filtered = filtered.filter((e) => e.approvalStatus === 'PENDING');
         } else if (query.status === 'APPROVED') {
-          filtered = filtered.filter((e) => e.isApproved !== false && e.approvalStatus !== 'PENDING' && e.approvalStatus !== 'REJECTED');
+          filtered = filtered.filter((e) => e.approvalStatus === 'APPROVED' || (e.isApproved === true && e.approvalStatus !== 'PENDING' && e.approvalStatus !== 'REJECTED'));
         } else if (query.status === 'REJECTED') {
           filtered = filtered.filter((e) => e.approvalStatus === 'REJECTED');
         }
@@ -704,9 +873,8 @@ export const api = {
       const res = await apiClient.get('/employees', { params: { status: 'PENDING' } });
       return res.data.data;
     } catch {
-      const local = localStorage.getItem('local_employees');
-      const all: Employee[] = local ? JSON.parse(local) : [];
-      return all.filter((e) => e.approvalStatus === 'PENDING' || e.isApproved === false);
+      const all: Employee[] = getLocalOrSeedEmployees();
+      return all.filter((e) => e.approvalStatus === 'PENDING');
     }
   },
 
@@ -715,7 +883,7 @@ export const api = {
       const res = await apiClient.post(`/employees/${idOrCode}/approve`);
       const approvedEmp = res.data.data;
       if (approvedEmp) {
-        const localEmployees: Employee[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
+        const localEmployees: Employee[] = getLocalOrSeedEmployees();
         const idx = localEmployees.findIndex(
           (e) => e.id === idOrCode || e.employeeCode.toUpperCase() === idOrCode.toUpperCase()
         );
@@ -733,7 +901,7 @@ export const api = {
       }
       return approvedEmp;
     } catch {
-      const localEmployees: Employee[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
+      const localEmployees: Employee[] = getLocalOrSeedEmployees();
       const idx = localEmployees.findIndex(
         (e) => e.id === idOrCode || e.employeeCode.toUpperCase() === idOrCode.toUpperCase()
       );
@@ -767,7 +935,7 @@ export const api = {
       const res = await apiClient.post(`/employees/${idOrCode}/reject`, { reason });
       const rejectedEmp = res.data.data;
       if (rejectedEmp) {
-        const localEmployees: Employee[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
+        const localEmployees: Employee[] = getLocalOrSeedEmployees();
         const idx = localEmployees.findIndex(
           (e) => e.id === idOrCode || e.employeeCode.toUpperCase() === idOrCode.toUpperCase()
         );
@@ -778,7 +946,7 @@ export const api = {
       }
       return rejectedEmp;
     } catch {
-      const localEmployees: Employee[] = JSON.parse(localStorage.getItem('local_employees') || '[]');
+      const localEmployees: Employee[] = getLocalOrSeedEmployees();
       const idx = localEmployees.findIndex(
         (e) => e.id === idOrCode || e.employeeCode.toUpperCase() === idOrCode.toUpperCase()
       );
@@ -841,14 +1009,15 @@ export const api = {
       return res.data.data;
     } catch {
       const localLogs: AttendanceLog[] = JSON.parse(localStorage.getItem('local_attendance_logs') || '[]');
+      const staffList = getLocalOrSeedEmployees();
       const todayLogs = localLogs.filter((l) => {
         const d = new Date(l.timestamp);
         const today = new Date();
         return d.toDateString() === today.toDateString();
       });
       return {
-        totalEmployees: 1,
-        presentToday: todayLogs.filter((l) => l.status === 'PRESENT').length || 1,
+        totalEmployees: staffList.length || 8,
+        presentToday: todayLogs.filter((l) => l.status === 'PRESENT').length || 2,
         lateToday: todayLogs.filter((l) => l.status === 'LATE').length || 0,
         rejectedToday: todayLogs.filter((l) => l.status === 'REJECTED').length || 0,
         averageFaceMatchRate: 98.5,

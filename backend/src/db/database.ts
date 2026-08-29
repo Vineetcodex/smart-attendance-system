@@ -87,6 +87,7 @@ interface DatabaseSchema {
   employees: Employee[];
   attendance_logs: AttendanceLog[];
   admin_users: AdminUser[];
+  deleted_employee_ids?: string[];
 }
 
 class DatabaseManager {
@@ -188,13 +189,32 @@ class DatabaseManager {
       }
 
       // Merge Cloud employees into Local
+      const deletedSet = new Set((this.data.deleted_employee_ids || []).map((s: string) => s.toUpperCase()));
+
       for (const ce of cloudEmployees) {
+        // If employee was explicitly deleted by administrator, delete from cloud and do not resurrect
+        if (deletedSet.has(ce.id.toUpperCase()) || (ce.employeeCode && deletedSet.has(ce.employeeCode.toUpperCase()))) {
+          supabaseDb.deleteEmployee(ce.id).catch(() => {});
+          continue;
+        }
+
         const localIdx = this.data.employees.findIndex(
           (e) => e.id === ce.id || e.employeeCode.toUpperCase() === ce.employeeCode.toUpperCase()
         );
         if (localIdx >= 0) {
           const localEmp = this.data.employees[localIdx];
-          const finalApprovalStatus = ce.approvalStatus || localEmp.approvalStatus || (ce.isApproved === false ? 'PENDING' : 'APPROVED');
+          // Preserve local administrative status (REJECTED / APPROVED)
+          let finalApprovalStatus: 'PENDING' | 'APPROVED' | 'REJECTED' = localEmp.approvalStatus || 'PENDING';
+          if (localEmp.approvalStatus === 'REJECTED') {
+            finalApprovalStatus = 'REJECTED';
+          } else if (localEmp.approvalStatus === 'APPROVED' || ce.approvalStatus === 'APPROVED') {
+            finalApprovalStatus = 'APPROVED';
+          } else if (ce.approvalStatus === 'REJECTED') {
+            finalApprovalStatus = 'REJECTED';
+          } else {
+            finalApprovalStatus = 'PENDING';
+          }
+
           const finalIsApproved = finalApprovalStatus === 'APPROVED';
 
           this.data.employees[localIdx] = {
@@ -202,9 +222,17 @@ class DatabaseManager {
             ...ce,
             isApproved: finalIsApproved,
             approvalStatus: finalApprovalStatus,
+            rejectionReason: localEmp.rejectionReason || ce.rejectionReason,
           };
         } else {
-          this.data.employees.push(ce);
+          const isDeleted = Array.isArray(this.data.deleted_employee_ids) && (
+            this.data.deleted_employee_ids.includes(ce.id) ||
+            this.data.deleted_employee_ids.includes(ce.employeeCode) ||
+            this.data.deleted_employee_ids.includes(ce.employeeCode.toUpperCase())
+          );
+          if (!isDeleted) {
+            this.data.employees.push(ce);
+          }
         }
       }
 
@@ -325,7 +353,7 @@ class DatabaseManager {
 
   getPendingEmployees(orgId?: string): Employee[] {
     return this.getEmployees(orgId).filter(
-      (e) => e.approvalStatus === 'PENDING' || e.isApproved === false
+      (e) => e.approvalStatus === 'PENDING'
     );
   }
 
@@ -345,6 +373,12 @@ class DatabaseManager {
     if (employee.approvalStatus === undefined) {
       employee.approvalStatus = employee.isApproved ? 'APPROVED' : 'PENDING';
     }
+    // If this code or ID was previously deleted, un-blacklist it
+    if (Array.isArray(this.data.deleted_employee_ids)) {
+      this.data.deleted_employee_ids = this.data.deleted_employee_ids.filter(
+        (id: string) => id.toLowerCase() !== employee.id.toLowerCase() && id.toLowerCase() !== employee.employeeCode.toLowerCase()
+      );
+    }
     this.data.employees.push(employee);
     this.save();
     supabaseDb.upsertEmployee(employee).catch((e) => console.warn('Supabase sync employee error:', e));
@@ -352,8 +386,12 @@ class DatabaseManager {
   }
 
   updateEmployee(idOrCode: string, updates: Partial<Employee>): Employee | undefined {
+    const cleanLookup = (idOrCode || '').trim().toLowerCase();
     const idx = this.data.employees.findIndex(
-      (e) => e.id === idOrCode || e.employeeCode.toLowerCase() === idOrCode.toLowerCase()
+      (e) =>
+        e.id.toLowerCase() === cleanLookup ||
+        e.employeeCode.toLowerCase() === cleanLookup ||
+        (e.email && e.email.toLowerCase() === cleanLookup)
     );
     if (idx >= 0) {
       this.data.employees[idx] = {
@@ -375,6 +413,7 @@ class DatabaseManager {
       approvedAt: new Date().toISOString(),
       approvedBy: adminName || 'Admin',
       isActive: true,
+      rejectionReason: undefined,
     });
   }
 
@@ -394,6 +433,18 @@ class DatabaseManager {
     this.data.employees = this.data.employees.filter(
       (e) => e.id !== idOrCode && e.employeeCode.toLowerCase() !== idOrCode.toLowerCase()
     );
+
+    this.data.deleted_employee_ids = this.data.deleted_employee_ids || [];
+    if (idOrCode && !this.data.deleted_employee_ids.includes(idOrCode)) {
+      this.data.deleted_employee_ids.push(idOrCode);
+    }
+    if (target?.id && !this.data.deleted_employee_ids.includes(target.id)) {
+      this.data.deleted_employee_ids.push(target.id);
+    }
+    if (target?.employeeCode && !this.data.deleted_employee_ids.includes(target.employeeCode)) {
+      this.data.deleted_employee_ids.push(target.employeeCode);
+    }
+
     if (this.data.employees.length !== initialLen || target) {
       this.save();
       const deleteIdentifier = target?.id || idOrCode;

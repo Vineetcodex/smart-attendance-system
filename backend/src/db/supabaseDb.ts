@@ -138,30 +138,43 @@ export class SupabaseDbManager {
       const { data, error } = await query;
       if (error || !data) return [];
 
-      return data.map((e: any) => ({
-        id: e.id,
-        orgId: e.org_id,
-        employeeCode: e.employee_code,
-        fullName: e.full_name,
-        email: e.email,
-        phone: e.phone || '',
-        department: e.department || 'Engineering',
-        position: e.position || 'Software Engineer',
-        passwordHash: e.password_hash || '',
-        faceEmbedding: e.face_embedding || [],
-        faceEmbeddings: e.face_embeddings || [],
-        photoUrl: e.photo_url || '',
-        isActive: e.is_active !== false,
-        isApproved: e.approval_status === 'APPROVED' || (e.is_approved === true && e.approval_status !== 'PENDING' && e.approval_status !== 'REJECTED'),
-        approvalStatus: (e.approval_status as any) || (e.is_approved === true ? 'APPROVED' : 'PENDING'),
-        approvedAt: e.approved_at,
-        approvedBy: e.approved_by,
-        rejectionReason: e.rejection_reason,
-        shiftStart: e.shift_start || '09:00',
-        shiftEnd: e.shift_end || '18:00',
-        createdAt: e.created_at,
-        updatedAt: e.updated_at,
-      }));
+      return data.map((e: any) => {
+        let mappedStatus: 'PENDING' | 'APPROVED' | 'REJECTED' = 'PENDING';
+        if (e.approval_status === 'APPROVED' || e.approval_status === 'REJECTED' || e.approval_status === 'PENDING') {
+          mappedStatus = e.approval_status;
+        } else if (e.is_approved === true) {
+          mappedStatus = 'APPROVED';
+        } else if (e.rejection_reason || e.is_active === false) {
+          mappedStatus = 'REJECTED';
+        } else {
+          mappedStatus = 'PENDING';
+        }
+
+        return {
+          id: e.id,
+          orgId: e.org_id,
+          employeeCode: e.employee_code,
+          fullName: e.full_name,
+          email: e.email,
+          phone: e.phone || '',
+          department: e.department || 'Engineering',
+          position: e.position || 'Software Engineer',
+          passwordHash: e.password_hash || '',
+          faceEmbedding: e.face_embedding || [],
+          faceEmbeddings: e.face_embeddings || [],
+          photoUrl: e.photo_url || '',
+          isActive: e.is_active !== false && mappedStatus !== 'REJECTED',
+          isApproved: mappedStatus === 'APPROVED',
+          approvalStatus: mappedStatus,
+          approvedAt: e.approved_at,
+          approvedBy: e.approved_by,
+          rejectionReason: e.rejection_reason,
+          shiftStart: e.shift_start || '09:00',
+          shiftEnd: e.shift_end || '18:00',
+          createdAt: e.created_at,
+          updatedAt: e.updated_at,
+        };
+      });
     } catch {
       return [];
     }
@@ -172,6 +185,17 @@ export class SupabaseDbManager {
     try {
       const { data, error } = await this.client.from('employees').select('*').eq('id', id).single();
       if (error || !data) return null;
+
+      let mappedStatus: 'PENDING' | 'APPROVED' | 'REJECTED' = 'PENDING';
+      if (data.approval_status === 'APPROVED' || data.approval_status === 'REJECTED' || data.approval_status === 'PENDING') {
+        mappedStatus = data.approval_status;
+      } else if (data.is_approved === true) {
+        mappedStatus = 'APPROVED';
+      } else if (data.rejection_reason || data.is_active === false) {
+        mappedStatus = 'REJECTED';
+      } else {
+        mappedStatus = 'PENDING';
+      }
 
       return {
         id: data.id,
@@ -186,9 +210,9 @@ export class SupabaseDbManager {
         faceEmbedding: data.face_embedding || [],
         faceEmbeddings: data.face_embeddings || [],
         photoUrl: data.photo_url || '',
-        isActive: data.is_active !== false,
-        isApproved: data.approval_status === 'APPROVED' || (data.is_approved === true && data.approval_status !== 'PENDING' && data.approval_status !== 'REJECTED'),
-        approvalStatus: (data.approval_status as any) || (data.is_approved === true ? 'APPROVED' : 'PENDING'),
+        isActive: data.is_active !== false && mappedStatus !== 'REJECTED',
+        isApproved: mappedStatus === 'APPROVED',
+        approvalStatus: mappedStatus,
         approvedAt: data.approved_at,
         approvedBy: data.approved_by,
         rejectionReason: data.rejection_reason,
@@ -212,6 +236,17 @@ export class SupabaseDbManager {
         .single();
       if (error || !data) return null;
 
+      let mappedStatus: 'PENDING' | 'APPROVED' | 'REJECTED' = 'PENDING';
+      if (data.approval_status === 'APPROVED' || data.approval_status === 'REJECTED' || data.approval_status === 'PENDING') {
+        mappedStatus = data.approval_status;
+      } else if (data.is_approved === true) {
+        mappedStatus = 'APPROVED';
+      } else if (data.rejection_reason || data.is_active === false) {
+        mappedStatus = 'REJECTED';
+      } else {
+        mappedStatus = 'PENDING';
+      }
+
       return {
         id: data.id,
         orgId: data.org_id,
@@ -225,9 +260,9 @@ export class SupabaseDbManager {
         faceEmbedding: data.face_embedding || [],
         faceEmbeddings: data.face_embeddings || [],
         photoUrl: data.photo_url || '',
-        isActive: data.is_active !== false,
-        isApproved: data.approval_status === 'APPROVED' || (data.is_approved === true && data.approval_status !== 'PENDING' && data.approval_status !== 'REJECTED'),
-        approvalStatus: (data.approval_status as any) || (data.is_approved === true ? 'APPROVED' : 'PENDING'),
+        isActive: data.is_active !== false && mappedStatus !== 'REJECTED',
+        isApproved: mappedStatus === 'APPROVED',
+        approvalStatus: mappedStatus,
         approvedAt: data.approved_at,
         approvedBy: data.approved_by,
         rejectionReason: data.rejection_reason,

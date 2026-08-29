@@ -22,9 +22,9 @@ export class EmployeeController {
 
       if (status && status !== 'ALL') {
         if (status === 'PENDING') {
-          employees = employees.filter((e) => e.approvalStatus === 'PENDING' || e.isApproved === false);
+          employees = employees.filter((e) => e.approvalStatus === 'PENDING');
         } else if (status === 'APPROVED') {
-          employees = employees.filter((e) => e.isApproved !== false && e.approvalStatus !== 'PENDING' && e.approvalStatus !== 'REJECTED');
+          employees = employees.filter((e) => e.approvalStatus === 'APPROVED' || (e.isApproved === true && e.approvalStatus !== 'PENDING' && e.approvalStatus !== 'REJECTED'));
         } else if (status === 'REJECTED') {
           employees = employees.filter((e) => e.approvalStatus === 'REJECTED');
         }
@@ -33,8 +33,8 @@ export class EmployeeController {
       // Hide passwordHash in listing
       const sanitized = employees.map(({ passwordHash, ...rest }) => ({
         ...rest,
-        isApproved: rest.isApproved !== false && rest.approvalStatus !== 'PENDING' && rest.approvalStatus !== 'REJECTED',
-        approvalStatus: rest.approvalStatus || (rest.isApproved === false ? 'PENDING' : 'APPROVED'),
+        isApproved: rest.approvalStatus === 'APPROVED' || (rest.isApproved === true && rest.approvalStatus !== 'PENDING' && rest.approvalStatus !== 'REJECTED'),
+        approvalStatus: rest.approvalStatus || (rest.isApproved === true ? 'APPROVED' : 'PENDING'),
       }));
       return res.json({ success: true, count: sanitized.length, data: sanitized });
     } catch (err: any) {

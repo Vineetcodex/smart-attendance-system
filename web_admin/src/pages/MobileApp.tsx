@@ -430,14 +430,21 @@ export const MobileApp: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const checkBackendHealth = async (urlToCheck?: string) => {
-    setConnectionStatus((prev) => ({ ...prev, testing: true }));
+  const checkBackendHealth = async (urlToCheck?: string, isSilent = false) => {
+    if (!isSilent) setConnectionStatus((prev) => ({ ...prev, testing: true }));
     const res = await api.testConnection(urlToCheck);
     setConnectionStatus({
       connected: res.connected,
       testing: false,
       message: res.connected ? 'Connected' : 'Offline Mode',
     });
+    if (res.connected) {
+      try {
+        const [orgData, empData] = await Promise.all([api.getOrganization(), api.getEmployees()]);
+        if (orgData) setOrg(orgData);
+        if (empData) directoryEmployeesRef.current = empData;
+      } catch (_) {}
+    }
     return res.connected;
   };
 
@@ -475,18 +482,25 @@ export const MobileApp: React.FC = () => {
     setSignupCode(`DRP${formatted}`);
   };
 
-  // Load Models & Check Updates on Mount
+  // Load Models & Check Updates on Mount with auto-reconnect loop
   useEffect(() => {
     loadFaceDetectionModels().catch((err) => {
       console.warn('Face models loading background:', err);
     });
     checkBackendHealth();
     handleCheckUpdate(false);
+
+    // Smart background heartbeat: Poll every 6s when offline to auto-catch Render wake-up
+    const keepAliveInterval = setInterval(() => {
+      checkBackendHealth(undefined, true);
+    }, 6000);
+
+    return () => clearInterval(keepAliveInterval);
   }, []);
 
   // Load Initial Org & Stored Session with fresh database embeddings
   const fetchInitialData = async () => {
-    checkBackendHealth();
+    checkBackendHealth(undefined, true);
     // 1. Immediately hydrate cached user to guarantee instant UI render
     const savedEmp = api.getStoredEmployee();
     if (savedEmp) {
