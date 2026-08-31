@@ -7,6 +7,7 @@ import {
   RefreshCw,
   LogOut,
   ArrowRight,
+  ArrowLeft,
   ShieldCheck,
   SwitchCamera,
   AlertTriangle,
@@ -64,7 +65,7 @@ import {
   PoseStage,
   FiveLandmarks,
 } from '../services/faceDetectionService.js';
-import { scanQrFromVideo, validateMasterQr } from '../services/qrScannerService.js';
+import { scanQrAsync, validateMasterQr } from '../services/qrScannerService.js';
 
 // Haversine distance calculator in meters
 const calculateHaversineDistanceMeters = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -1014,7 +1015,7 @@ export const MobileApp: React.FC = () => {
             return;
           }
 
-          const qrResult = scanQrFromVideo(video);
+          const qrResult = await scanQrAsync(video);
           if (qrResult && qrResult.data) {
             const validation = validateMasterQr(qrResult.data, org);
             if (validation.isValid) {
@@ -1425,12 +1426,15 @@ export const MobileApp: React.FC = () => {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = (targetMode?: 'LOGIN' | 'SIGNUP') => {
     api.employeeLogout();
     setCurrentEmp(null);
     setIsAttendanceCameraActive(false);
     setVerifyResult(null);
-    showToast('Logged out successfully.');
+    if (targetMode) {
+      setAuthMode(targetMode);
+    }
+    showToast(targetMode === 'SIGNUP' ? 'Switched to Registration' : 'Returned to Sign In');
   };
 
   // -------------------------------------------------------------
@@ -1867,14 +1871,18 @@ export const MobileApp: React.FC = () => {
             <span>{connectionStatus.connected ? 'Online' : 'Offline'}</span>
           </button>
 
-          <a
-            href="/admin"
-            title="HR & Admin Management Portal"
-            className="px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-emerald-400 border border-slate-700 transition flex items-center gap-1.5 text-[11px] font-semibold"
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Admin</span>
-          </a>
+          {currentEmp && (
+            <button
+              type="button"
+              onClick={() => handleLogout('LOGIN')}
+              title="Back to Sign In / Registration"
+              className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition flex items-center gap-1 text-[11px] font-semibold"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Back</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => setServerSettingsOpen(true)}
@@ -1885,8 +1893,8 @@ export const MobileApp: React.FC = () => {
           </button>
           {currentEmp && (
             <button
-              onClick={handleLogout}
-              title="Logout"
+              onClick={() => handleLogout('LOGIN')}
+              title="Sign Out / Switch Employee"
               className="p-2 rounded-xl bg-slate-800/80 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition"
             >
               <LogOut className="w-4 h-4" />
@@ -2577,19 +2585,21 @@ export const MobileApp: React.FC = () => {
               <div className="pt-2 border-t border-slate-800/80 relative z-10 flex items-center justify-between text-xs">
                 <button
                   type="button"
-                  onClick={handleLogout}
+                  onClick={() => handleLogout('LOGIN')}
                   className="text-slate-400 hover:text-white transition flex items-center gap-1 text-[11px]"
                 >
-                  <LogOut className="w-3 h-3" />
-                  <span>Sign In with Different ID</span>
+                  <ArrowLeft className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Back to Sign In</span>
                 </button>
 
-                <a
-                  href="/admin"
-                  className="text-amber-400 hover:text-amber-300 font-semibold transition text-[11px]"
+                <button
+                  type="button"
+                  onClick={() => handleLogout('SIGNUP')}
+                  className="text-emerald-400 hover:text-emerald-300 font-semibold transition text-[11px] flex items-center gap-1"
                 >
-                  Admin Login ➔
-                </a>
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>New Registration</span>
+                </button>
               </div>
             </div>
           </div>
@@ -2651,6 +2661,32 @@ export const MobileApp: React.FC = () => {
                   <span className="text-[10px] px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">
                     Shift {currentEmp?.shiftStart || 'Flexible 24x7'}
                   </span>
+                </div>
+
+                {/* Quick Account Navigation & Back Actions */}
+                <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-2 shadow-sm">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <User className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Logged In: <strong>{currentEmp?.employeeCode}</strong></span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleLogout('LOGIN')}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition text-[10px] font-semibold flex items-center gap-1"
+                    >
+                      <ArrowLeft className="w-3 h-3 text-emerald-400" />
+                      <span>Back to Sign In</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleLogout('SIGNUP')}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 transition text-[10px] font-semibold flex items-center gap-1"
+                    >
+                      <UserPlus className="w-3 h-3" />
+                      <span>Register</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Live Office Presence Banner */}

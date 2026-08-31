@@ -1,18 +1,20 @@
 import { db } from '../db/database.js';
+import { supabaseDb } from '../db/supabaseDb.js';
 
-const codesToRemove = ['07', '1', 'DRP05'];
-const employees = db.getEmployees();
-
-console.log('Current employees in database:');
-employees.forEach(e => console.log(`- ${e.employeeCode} (${e.fullName}, ${e.email})`));
-
-for (const code of codesToRemove) {
-  const emp = db.getEmployeeByCode(code);
-  if (emp) {
-    db.deleteEmployee(emp.id);
-    console.log(`Deleted duplicate test employee: ${code} (${emp.fullName})`);
+async function cleanup() {
+  const employees = db.getEmployees();
+  for (const emp of employees) {
+    if (emp.employeeCode.startsWith('TEST-EMP')) {
+      db.deleteEmployee(emp.id);
+      await supabaseDb.deleteEmployee(emp.id);
+      console.log(`Deleted test employee: ${emp.employeeCode}`);
+    }
   }
+
+  await db.syncWithCloud();
+  console.log('\nFinal Active Employees:');
+  db.getEmployees().forEach(e => console.log(`- [${e.employeeCode}] ${e.fullName} (${e.email}) - Status: ${e.approvalStatus || 'APPROVED'}`));
 }
 
-console.log('\nRemaining employees:');
-db.getEmployees().forEach(e => console.log(`- ${e.employeeCode} (${e.fullName}, ${e.email})`));
+cleanup();
+

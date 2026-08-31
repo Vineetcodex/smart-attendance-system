@@ -391,6 +391,10 @@ class DatabaseManager {
     if (employee.approvalStatus === undefined) {
       employee.approvalStatus = employee.isApproved ? 'APPROVED' : 'PENDING';
     }
+    const org = this.getPrimaryOrganization();
+    if (org && (!employee.orgId || employee.orgId.trim() === '')) {
+      employee.orgId = org.id;
+    }
     // If this code or ID was previously deleted, un-blacklist it
     if (Array.isArray(this.data.deleted_employee_ids)) {
       this.data.deleted_employee_ids = this.data.deleted_employee_ids.filter(
@@ -582,7 +586,16 @@ class DatabaseManager {
   createAttendanceLog(log: AttendanceLog): AttendanceLog {
     this.data.attendance_logs.push(log);
     this.save();
-    supabaseDb.createAttendanceLog(log).catch((e) => console.warn('Supabase sync log error:', e));
+    
+    // Ensure the employee exists in Supabase before creating the log to avoid foreign key failure
+    const emp = this.getEmployeeById(log.employeeId) || this.getEmployeeByCode(log.employeeCode);
+    if (emp) {
+      supabaseDb.upsertEmployee(emp)
+        .then(() => supabaseDb.createAttendanceLog(log))
+        .catch((e) => console.warn('Supabase sync log error:', e));
+    } else {
+      supabaseDb.createAttendanceLog(log).catch((e) => console.warn('Supabase sync log error:', e));
+    }
     return log;
   }
 
