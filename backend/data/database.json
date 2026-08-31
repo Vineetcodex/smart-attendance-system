@@ -554,8 +554,8 @@
       "shiftEnd": "Anytime",
       "createdAt": "2026-08-23T07:08:34.315+00:00",
       "updatedAt": "2026-08-24T09:34:18.044+00:00",
-      "isApproved": false,
-      "approvalStatus": "PENDING"
+      "isApproved": true,
+      "approvalStatus": "APPROVED"
     },
     {
       "id": "02316817-ea09-4fd6-a403-e9ff74ce08e6",
@@ -1095,12 +1095,12 @@
       "shiftEnd": "Anytime",
       "createdAt": "2026-08-24T10:16:52.626+00:00",
       "updatedAt": "2026-08-24T10:16:52.628+00:00",
-      "isApproved": false,
-      "approvalStatus": "PENDING"
+      "isApproved": true,
+      "approvalStatus": "APPROVED"
     },
     {
       "id": "emp_test_drp01",
-      "orgId": "org_default_hq_1",
+      "orgId": "org_drp_tech_hq",
       "employeeCode": "DRP01",
       "fullName": "John Doe",
       "email": "john.doe@drptech.com",
@@ -1261,10 +1261,9 @@
       "approvalStatus": "APPROVED",
       "shiftStart": "09:00",
       "shiftEnd": "18:00",
-      "createdAt": "2026-08-28T17:21:32.800Z",
-      "updatedAt": "2026-08-28T17:21:32.872Z",
-      "approvedAt": "2026-08-28T17:21:32.872Z",
-      "approvedBy": "Sarah Jenkins (HR Director)"
+      "createdAt": "2026-08-28T17:21:32.8+00:00",
+      "updatedAt": "2026-08-31T16:38:17.196+00:00",
+      "faceEmbeddings": []
     }
   ],
   "attendance_logs": [

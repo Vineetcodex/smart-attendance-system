@@ -126,6 +126,14 @@ async function startServer() {
     setInterval(() => {
       db.syncWithCloud().catch((err) => console.warn('Background cloud sync warning:', err));
     }, 5 * 60 * 1000);
+
+    // 4. Automated 24/7 Render Cloud Keep-Alive Self-Ping (Every 10 minutes)
+    setInterval(() => {
+      fetch('https://smart-attendance-system-sdnf.onrender.com/api/v1/health')
+        .then((r) => r.json())
+        .then(() => console.log('💓 [KeepAlive] Self-health ping successful.'))
+        .catch(() => {});
+    }, 10 * 60 * 1000);
   } catch (err) {
     console.error('Error during startup cloud sync:', err);
   }

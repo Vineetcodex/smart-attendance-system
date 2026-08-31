@@ -1,0 +1,27 @@
+name: 24/7 Render Cloud Keep-Alive Ping
+
+on:
+  schedule:
+    # Run every 10 minutes (UTC) to keep Render Web Service active 24/7
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    name: Ping Render API Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: 🌐 Ping Render Health Endpoint
+        run: |
+          echo "Pinging DRP Attendance Render Backend at $(date -u)..."
+          RESPONSE=$(curl -sS -w "\nHTTP_STATUS:%{http_code}\nTIME_TOTAL:%{time_total}s" --max-time 45 "https://smart-attendance-system-sdnf.onrender.com/api/v1/health" || true)
+          echo "$RESPONSE"
+          
+          if echo "$RESPONSE" | grep -q "healthy"; then
+            echo "✅ Render backend is active, healthy, and awake!"
+          else
+            echo "⚠️ Backend was asleep or returned unexpected payload. Pinging root URL as secondary wake-up..."
+            curl -sS -m 45 "https://smart-attendance-system-sdnf.onrender.com/" || true
+          fi

@@ -203,27 +203,38 @@ class DatabaseManager {
         );
         if (localIdx >= 0) {
           const localEmp = this.data.employees[localIdx];
-          // Preserve local administrative status (REJECTED / APPROVED)
-          let finalApprovalStatus: 'PENDING' | 'APPROVED' | 'REJECTED' = localEmp.approvalStatus || 'PENDING';
-          if (localEmp.approvalStatus === 'REJECTED') {
+          // Permanent Administrative Status Locking: Once approved, never revert to pending
+          let finalApprovalStatus: 'PENDING' | 'APPROVED' | 'REJECTED' = 'APPROVED';
+          if (localEmp.approvalStatus === 'REJECTED' || ce.approvalStatus === 'REJECTED') {
             finalApprovalStatus = 'REJECTED';
-          } else if (localEmp.approvalStatus === 'APPROVED' || ce.approvalStatus === 'APPROVED') {
+          } else if (
+            localEmp.approvalStatus === 'APPROVED' ||
+            ce.approvalStatus === 'APPROVED' ||
+            localEmp.isApproved === true ||
+            ce.isApproved === true ||
+            ce.isActive === true
+          ) {
             finalApprovalStatus = 'APPROVED';
-          } else if (ce.approvalStatus === 'REJECTED') {
-            finalApprovalStatus = 'REJECTED';
           } else {
             finalApprovalStatus = 'PENDING';
           }
 
           const finalIsApproved = finalApprovalStatus === 'APPROVED';
+          const finalIsActive = finalApprovalStatus === 'APPROVED';
 
           this.data.employees[localIdx] = {
             ...localEmp,
             ...ce,
+            isActive: finalIsActive,
             isApproved: finalIsApproved,
             approvalStatus: finalApprovalStatus,
-            rejectionReason: localEmp.rejectionReason || ce.rejectionReason,
+            rejectionReason: finalApprovalStatus === 'REJECTED' ? (localEmp.rejectionReason || ce.rejectionReason) : undefined,
           };
+
+          // If local was approved but cloud was not yet updated, sync up to Supabase
+          if (finalApprovalStatus === 'APPROVED' && (ce.approvalStatus !== 'APPROVED' || ce.isActive !== true)) {
+            supabaseDb.upsertEmployee(this.data.employees[localIdx]).catch(() => {});
+          }
         } else {
           const isDeleted = Array.isArray(this.data.deleted_employee_ids) && (
             this.data.deleted_employee_ids.includes(ce.id) ||
@@ -237,12 +248,19 @@ class DatabaseManager {
       }
 
       // Push any local employees not present in Cloud to Supabase
+      const primaryOrg = this.getPrimaryOrganization() || (cloudOrgs.length > 0 ? cloudOrgs[0] : null);
       for (const le of this.data.employees) {
         if (!cloudEmpMap.has(le.id) && !cloudEmpMap.has(le.employeeCode.toUpperCase())) {
+          if (primaryOrg) {
+            le.orgId = primaryOrg.id;
+          }
           console.log(`☁️ Uploading local employee ${le.employeeCode} (${le.fullName}) to Supabase...`);
           await supabaseDb.upsertEmployee(le);
         }
       }
+
+      // Save merged changes to disk
+      this.save();
 
       // 3. Sync Attendance Logs (Union of both)
       const cloudLogs = await supabaseDb.getAttendanceLogs();

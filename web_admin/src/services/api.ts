@@ -386,13 +386,13 @@ export const api = {
     const testUrl = targetUrl || getApiBase();
     const cleanUrl = testUrl.replace(/\/+$/, '');
     try {
-      const res = await axios.get(`${cleanUrl}/health`, { timeout: 15000 });
+      const res = await axios.get(`${cleanUrl}/health`, { timeout: 30000 });
       if (res.data?.status === 'healthy') {
         return { connected: true, url: testUrl, message: 'Backend connected successfully!' };
       }
       return { connected: true, url: testUrl, message: 'Server reached.' };
     } catch (err: any) {
-      return { connected: false, url: testUrl, message: err.message || 'Connection timeout/error' };
+      return { connected: false, url: testUrl, message: err.message || 'Connecting to cloud...' };
     }
   },
 
@@ -707,8 +707,18 @@ export const api = {
   async getOrganization(): Promise<Organization> {
     try {
       const res = await apiClient.get('/org');
-      return res.data.data;
+      const data = res.data.data;
+      if (data) {
+        localStorage.setItem('local_org_settings', JSON.stringify(data));
+      }
+      return data;
     } catch (err) {
+      const cached = localStorage.getItem('local_org_settings');
+      if (cached) {
+        try {
+          return JSON.parse(cached);
+        } catch (_) {}
+      }
       return {
         id: 'org_drp_tech_hq',
         name: 'DRP Technology HQ',
@@ -728,12 +738,24 @@ export const api = {
 
   async updateOrganization(data: Partial<Organization>): Promise<Organization> {
     const res = await apiClient.put('/org', data);
-    return res.data.data;
+    const updated = res.data.data;
+    if (updated) {
+      localStorage.setItem('local_org_settings', JSON.stringify(updated));
+    }
+    return updated;
   },
 
   async regenerateMasterQr() {
     const res = await apiClient.post('/org/regenerate-qr');
-    return res.data.data;
+    const updated = res.data.data;
+    const cached = localStorage.getItem('local_org_settings');
+    if (cached && updated) {
+      try {
+        const obj = JSON.parse(cached);
+        localStorage.setItem('local_org_settings', JSON.stringify({ ...obj, ...updated }));
+      } catch (_) {}
+    }
+    return updated;
   },
 
   // Employees
@@ -767,6 +789,17 @@ export const api = {
         localStorage.setItem('employee_user', JSON.stringify({ ...cu, ...approvedEmp, isApproved: true, approvalStatus: 'APPROVED' }));
       }
     }
+    try {
+      const local = localStorage.getItem('local_employees');
+      if (local) {
+        const arr = JSON.parse(local);
+        const idx = arr.findIndex((e: any) => e.id === idOrCode || e.employeeCode?.toUpperCase() === idOrCode.toUpperCase());
+        if (idx >= 0) {
+          arr[idx] = { ...arr[idx], ...approvedEmp, isApproved: true, approvalStatus: 'APPROVED', approvedAt: new Date().toISOString() };
+          localStorage.setItem('local_employees', JSON.stringify(arr));
+        }
+      }
+    } catch (_) {}
     return approvedEmp;
   },
 
@@ -815,10 +848,10 @@ export const api = {
         return d.toDateString() === today.toDateString();
       });
       return {
-        totalEmployees: staffList.length || 8,
-        presentToday: todayLogs.filter((l) => l.status === 'PRESENT').length || 2,
-        lateToday: todayLogs.filter((l) => l.status === 'LATE').length || 0,
-        rejectedToday: todayLogs.filter((l) => l.status === 'REJECTED').length || 0,
+        totalEmployees: staffList.length,
+        presentToday: todayLogs.filter((l) => l.status === 'PRESENT').length,
+        lateToday: todayLogs.filter((l) => l.status === 'LATE').length,
+        rejectedToday: todayLogs.filter((l) => l.status === 'REJECTED').length,
         averageFaceMatchRate: 98.5,
         activeGeofenceViolations: 0,
       };
