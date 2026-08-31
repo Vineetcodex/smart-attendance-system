@@ -580,7 +580,7 @@
       "shiftEnd": "18:00"
     },
     {
-      "id": "f292e9e8-2894-4ea9-9b87-71b5a236971a",
+      "id": "100f5701-6dc5-4dc9-93f8-03defcdece91",
       "orgId": "org_drp_tech_hq",
       "employeeCode": "DRP08",
       "fullName": "Robert Brown",
@@ -588,7 +588,7 @@
       "phone": "",
       "department": "Engineering",
       "position": "QA Engineer",
-      "passwordHash": "$2a$10$6c8.t5fbV0KZ0zlFZzYJt.kSYwC6TobvCdKt/4yC8U7Pg8d/j2qUq",
+      "passwordHash": "$2a$10$h4M00Mp8M3VJiJlhncNhZ.3qUHTR6uePZDxP12geuwzPHEd5X5SEa",
       "faceEmbedding": [
         0.014092,
         0.029709,
@@ -719,15 +719,15 @@
         0.089428,
         -0.104159
       ],
+      "faceEmbeddings": [],
       "photoUrl": "https://api.dicebear.com/7.x/avataaars/svg?seed=Robert%20Brown",
       "isActive": true,
       "isApproved": true,
       "approvalStatus": "APPROVED",
       "shiftStart": "09:00",
       "shiftEnd": "18:00",
-      "createdAt": "2026-08-28T17:21:32.8+00:00",
-      "updatedAt": "2026-08-31T16:38:17.196+00:00",
-      "faceEmbeddings": []
+      "createdAt": "2026-08-31T18:17:52.264+00:00",
+      "updatedAt": "2026-08-31T18:17:53.522+00:00"
     }
   ],
   "attendance_logs": [
@@ -1179,7 +1179,6 @@
   "deleted_employee_ids": [
     "DRP03",
     "8158c3d9-f8be-4f23-b725-755f5d0ec8a6",
-    "DRP09",
     "e444d05e-66d2-4a79-b853-2f0a80fc8297",
     "test.drp03@drptech.com",
     "rejected@drptech.com",
@@ -1188,6 +1187,9 @@
     "emp_test_1788195312673",
     "TEST-EMP-2673",
     "emp_test_1788197235390",
-    "TEST-EMP-5390"
+    "TEST-EMP-5390",
+    "f292e9e8-2894-4ea9-9b87-71b5a236971a",
+    "DRP09",
+    "2087a562-9eeb-4f84-b282-784d65401e0d"
   ]
 }

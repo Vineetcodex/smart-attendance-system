@@ -250,11 +250,9 @@ export class AuthController {
           ? multiPoseVectors[0]
           : FaceService.generateEmbeddingFromSeed(`${code}-${fullName}`);
 
-      // If already exists, update profile and preserve APPROVED status if already approved
+      // If already exists, update profile and set to PENDING for admin review
       const existingEmp = db.getEmployeeByCode(code) || db.getEmployeeByEmail(email);
       if (existingEmp) {
-        const isAlreadyApproved = existingEmp.isApproved === true || existingEmp.approvalStatus === 'APPROVED';
-
         const updated = db.updateEmployee(existingEmp.id, {
           fullName: fullName.trim(),
           email: email.toLowerCase().trim(),
@@ -267,44 +265,16 @@ export class AuthController {
           shiftEnd: shiftEnd || existingEmp.shiftEnd || 'Anytime',
           department: (department || existingEmp.department || 'Engineering').trim(),
           position: (position || existingEmp.position || 'Software Engineer').trim(),
-          isApproved: isAlreadyApproved,
-          approvalStatus: isAlreadyApproved ? 'APPROVED' : 'PENDING',
-          approvedAt: isAlreadyApproved ? (existingEmp.approvedAt || new Date().toISOString()) : undefined,
-          approvedBy: isAlreadyApproved ? (existingEmp.approvedBy || 'Admin') : undefined,
+          isApproved: false,
+          approvalStatus: 'PENDING',
+          approvedAt: undefined,
+          approvedBy: undefined,
           rejectionReason: undefined,
+          updatedAt: new Date().toISOString(),
         });
 
         const empData = updated || existingEmp;
         const { passwordHash: _, ...sanitized } = empData;
-
-        if (isAlreadyApproved) {
-          const token = jwt.sign(
-            {
-              id: empData.id,
-              email: empData.email,
-              employeeCode: empData.employeeCode,
-              role: 'EMPLOYEE',
-              orgId: empData.orgId,
-              fullName: empData.fullName,
-            },
-            config.jwtSecret,
-            { expiresIn: '30d' }
-          );
-
-          return res.status(200).json({
-            success: true,
-            isPendingApproval: false,
-            approvalStatus: 'APPROVED',
-            message: 'Biometric Face ID updated successfully! Your account remains approved.',
-            data: {
-              token,
-              employee: sanitized,
-              isPendingApproval: false,
-              approvalStatus: 'APPROVED',
-              organization: org,
-            },
-          });
-        }
 
         return res.status(200).json({
           success: true,
