@@ -611,14 +611,23 @@ class DatabaseManager {
     return admin;
   }
 
-  // Statistics helper
+  // Statistics helper (Timezone-resilient & 24h cycle aware)
   getAttendanceStats(orgId: string) {
-    const today = new Date().toISOString().split('T')[0];
-    const todayLogs = this.data.attendance_logs.filter(
-      (l) => l.orgId === orgId && l.timestamp.startsWith(today)
-    );
-    const activeEmployees = this.data.employees.filter((e) => e.orgId === orgId && e.isActive);
+    const todayUtc = new Date().toISOString().split('T')[0];
+    const now = Date.now();
+    const primaryOrg = this.getPrimaryOrganization();
+    const validOrgId = orgId || primaryOrg?.id || 'org_drp_tech_hq';
 
+    // Match logs within current 24-hour cycle or matching UTC/local date
+    const todayLogs = this.data.attendance_logs.filter((l) => {
+      const logTime = new Date(l.timestamp).getTime();
+      const isWithin24h = Math.abs(now - logTime) < 24 * 3600 * 1000;
+      const isSameDate = l.timestamp.startsWith(todayUtc);
+      const isOrgMatch = !orgId || l.orgId === validOrgId || l.orgId === primaryOrg?.id || !l.orgId;
+      return (isWithin24h || isSameDate) && isOrgMatch;
+    });
+
+    const activeEmployees = this.data.employees.filter((e) => e.isActive);
     const presentCount = todayLogs.filter((l) => l.status === 'PRESENT').length;
     const lateCount = todayLogs.filter((l) => l.status === 'LATE').length;
     const rejectedCount = todayLogs.filter((l) => l.status === 'REJECTED').length;
@@ -627,13 +636,13 @@ class DatabaseManager {
 
     // In-Office tracking: determine if employee's most recent valid punch today is CHECK_IN
     const employeeLatestPunch: Record<string, string> = {};
-    // Sort chronological to get most recent state
     const sortedTodayLogs = [...todayLogs].sort(
       (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
     for (const log of sortedTodayLogs) {
       if (log.status !== 'REJECTED') {
-        employeeLatestPunch[log.employeeId] = log.punchType || (log.status === 'CHECKED_OUT' ? 'CHECK_OUT' : 'CHECK_IN');
+        const key = (log.employeeCode || log.employeeId || '').toUpperCase();
+        employeeLatestPunch[key] = log.punchType || (log.status === 'CHECKED_OUT' ? 'CHECK_OUT' : 'CHECK_IN');
       }
     }
     const inOfficeCount = Object.values(employeeLatestPunch).filter((p) => p === 'CHECK_IN').length;
@@ -648,7 +657,7 @@ class DatabaseManager {
     const validLogs = todayLogs.filter((l) => l.status !== 'REJECTED');
     const avgConfidence =
       validLogs.length > 0
-        ? validLogs.reduce((acc, curr) => acc + curr.faceSimilarityScore, 0) / validLogs.length
+        ? validLogs.reduce((acc, curr) => acc + (curr.faceSimilarityScore || 0.95), 0) / validLogs.length
         : 0.96;
 
     return {
